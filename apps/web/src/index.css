@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   Tema — palette brand BORU, riusata per coerenza con l'ecosistema.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  /* colori atomici */
+  --nero: #1a1613;
+  --porcellana: #fcfaf6;
+  --azzurro: #b1ddf1;
+  --rosa: #ef95b4;
+
+  /* token semantici (tema scuro, come il sito BORU) */
+  --background: var(--nero);
+  --foreground: var(--porcellana);
+  --muted-foreground: color-mix(in oklab, var(--porcellana) 62%, transparent);
+  --border: color-mix(in oklab, var(--porcellana) 14%, transparent);
+  --card: color-mix(in oklab, var(--porcellana) 4%, transparent);
+  --accent: var(--azzurro);
+  --accent-2: var(--rosa);
+  --ring: var(--azzurro);
+
+  --radius: 16px;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-card: var(--card);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-ring: var(--ring);
+  --radius-lg: var(--radius);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
