@@ -25,14 +25,25 @@ function optional(name: string, fallback: string): string {
   return v && v.trim() !== "" ? v : fallback;
 }
 
+const isProd = process.env.NODE_ENV === "production";
+
+// Render espone automaticamente l'URL pubblico del servizio in RENDER_EXTERNAL_URL
+// (es. https://mail-automation-xxxx.onrender.com). Quando c'è, lo usiamo come
+// origine del sito e per costruire il redirect URI OAuth: così non serve
+// inserirli a mano dopo aver scoperto il dominio.
+const publicUrl = (process.env.RENDER_EXTERNAL_URL ?? "").replace(/\/$/, "");
+
 export const env = {
+  isProd,
   port: Number(optional("PORT", "4000")),
-  webOrigin: optional("WEB_ORIGIN", "http://localhost:5273"),
+  webOrigin: publicUrl || optional("WEB_ORIGIN", "http://localhost:5273"),
 
   google: {
     clientId: required("GOOGLE_CLIENT_ID"),
     clientSecret: required("GOOGLE_CLIENT_SECRET"),
-    redirectUri: optional("GOOGLE_REDIRECT_URI", "http://localhost:4000/auth/google/callback"),
+    redirectUri: publicUrl
+      ? `${publicUrl}/auth/google/callback`
+      : optional("GOOGLE_REDIRECT_URI", "http://localhost:4000/auth/google/callback"),
   },
 
   anthropic: {

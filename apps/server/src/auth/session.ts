@@ -12,7 +12,7 @@ export function setSession(res: Response, userId: number): void {
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: false, // true dietro HTTPS in produzione
+    secure: env.isProd, // su Render (HTTPS) deve essere true, altrimenti il cookie non viene salvato
     maxAge: MAX_AGE_MS,
   });
 }

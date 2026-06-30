@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: mail-automation
+    runtime: node
+    plan: free
+    region: frankfurt
+    # Build: installa le dipendenze, scarica Chromium per Puppeteer nella cache
+    # del progetto (persistente tra build/run su Render) e compila server + frontend.
+    buildCommand: npm install && npx puppeteer browsers install chrome && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Chromium di Puppeteer scaricato qui (dir inclusa nel filesystem del servizio)
+      - key: PUPPETEER_CACHE_DIR
+        value: /opt/render/project/src/.cache/puppeteer
+      # ── Segreti: da inserire nella dashboard Render (sync: false = non in questo file) ──
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: TOKEN_ENC_KEY
+        sync: false
+      # WEB_ORIGIN e GOOGLE_REDIRECT_URI sono derivati automaticamente da
+      # RENDER_EXTERNAL_URL nel codice: non serve impostarli a mano.

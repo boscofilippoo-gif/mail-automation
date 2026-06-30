@@ -1,3 +1,7 @@
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -13,6 +17,8 @@ import { scanRouter } from "./routes/scan.js";
 import { scanAllUsers } from "./jobs/dailyScan.js";
 import { closePdfBrowser } from "./pdf/generate.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 migrate();
 
 const app = express();
@@ -21,7 +27,7 @@ app.use(cookieParser());
 app.use(
   cors({
     origin: env.webOrigin,
-    credentials: true, // necessario per inviare il cookie di sessione
+    credentials: true, // necessario per inviare il cookie di sessione (utile in dev cross-origin)
   }),
 );
 
@@ -32,6 +38,18 @@ app.use("/api/me", meRouter);
 app.use("/api/keywords", keywordsRouter);
 app.use("/api/documents", documentsRouter);
 app.use("/api/scan", scanRouter);
+
+// ── In produzione il server serve anche il frontend buildato (single service) ──
+// Il build del frontend finisce in apps/web/dist; da dist/index.js del server
+// risaliamo a quella cartella. Fallback SPA per le route gestite da React Router.
+const webDist = path.resolve(__dirname, "../../web/dist");
+if (fs.existsSync(webDist)) {
+  app.use(express.static(webDist));
+  app.get(/^(?!\/(api|auth|health)).*/, (_req, res) => {
+    res.sendFile(path.join(webDist, "index.html"));
+  });
+  console.log(`[server] frontend servito da ${webDist}`);
+}
 
 const server = app.listen(env.port, () => {
   console.log(`[server] in ascolto su http://localhost:${env.port}`);
