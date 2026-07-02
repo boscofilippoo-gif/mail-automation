@@ -1,4 +1,4 @@
-import { ArrowRight, FileText, Mails, ScanSearch } from "lucide-react";
+import { ArrowRight, FileText, Mails, Sparkles } from "lucide-react";
 
 import { loginWithGoogle } from "@/api";
 
@@ -16,9 +16,9 @@ export function Login() {
         <span style={{ color: "var(--rosa)" }}>in automatico.</span>
       </h1>
       <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
-        Scegli una parola chiave nell'oggetto delle mail che ricevi — "ordine", "preventivo",
-        "fattura". Ogni giorno il sistema le trova, ne legge il contenuto e ti genera il PDF
-        pronto. Tu lo trovi qui.
+        L'AI legge le mail che ricevi e riconosce da sola preventivi, ordini e fatture. Prende i
+        prezzi dal tuo listino, genera il PDF col tuo template e lo archivia qui — pronto da
+        modificare e inviare.
       </p>
 
       <button
@@ -34,9 +34,9 @@ export function Login() {
       </p>
 
       <div className="mt-20 grid w-full max-w-3xl grid-cols-1 gap-4 text-left sm:grid-cols-3">
-        <Step icon={ScanSearch} title="1 · Configura" text="Imposti le parole chiave da cercare nell'oggetto delle mail." />
-        <Step icon={Mails} title="2 · Scansiona" text="Ogni giorno il sistema controlla la casella e trova le mail giuste." />
-        <Step icon={FileText} title="3 · Genera" text="L'AI legge il contenuto e crea il PDF, che archiviamo per te." />
+        <Step icon={Mails} title="1 · Collega" text="Accedi con Gmail e collega il tuo listino prezzi: Google Sheet, PDF o CSV." />
+        <Step icon={Sparkles} title="2 · Rileva" text="Ogni giorno l'AI trova le mail giuste da sola — o con le parole chiave che scegli tu." />
+        <Step icon={FileText} title="3 · Genera" text="Il documento nasce già coi prezzi del listino, col tuo template. Lo modifichi e lo scarichi." />
       </div>
     </div>
   );
@@ -47,7 +47,7 @@ function Step({
   title,
   text,
 }: {
-  icon: typeof ScanSearch;
+  icon: typeof Mails;
   title: string;
   text: string;
 }) {
