@@ -72,6 +72,15 @@ export function migrate(): void {
       last_run_at  TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS price_lists (
+      user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      source_type TEXT NOT NULL,          -- 'sheet' | 'pdf' | 'csv'
+      source_ref  TEXT NOT NULL,          -- spreadsheetId oppure nome file
+      items_json  TEXT NOT NULL,          -- array di PriceListItem, max 2000
+      item_count  INTEGER NOT NULL,
+      synced_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS user_settings (
       user_id         INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       template_id     TEXT NOT NULL DEFAULT 'classic',

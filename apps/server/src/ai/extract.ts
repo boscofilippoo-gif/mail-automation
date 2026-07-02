@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 import { env } from "../env.js";
-import type { DocType, ExtractedDocument } from "../types.js";
+import type { DocType, ExtractedDocument, PriceListItem } from "../types.js";
 
 const client = new Anthropic({ apiKey: env.anthropic.apiKey });
 
@@ -27,8 +27,11 @@ const DOCUMENT_SCHEMA = {
         properties: {
           description: { type: "string" },
           quantity: { type: "number" },
-          unit_price: { type: "number" },
-          total: { type: "number" },
+          unit_price: {
+            type: ["number", "null"],
+            description: "Prezzo unitario. Se c'è un listino, SOLO dal listino per gli articoli abbinati; null se il prezzo non è noto. MAI inventato.",
+          },
+          total: { type: ["number", "null"], description: "quantity × unit_price; null se unit_price è null." },
         },
         required: ["description", "quantity", "unit_price", "total"],
         additionalProperties: false,
@@ -67,18 +70,68 @@ Regole:
 - Per ogni riga calcola 'total' = quantity * unit_price quando non indicato esplicitamente.
 - 'doc_type' deve riflettere il tipo richiesto dal chiamante.`;
 
+const LISTINO_RULES = `
+
+REGOLE LISTINO (è fornito il listino prezzi dell'azienda):
+- Abbina ogni articolo richiesto nella mail alla voce di listino più pertinente (match flessibile in italiano: sinonimi, abbreviazioni, singolare/plurale, codici articolo).
+- Per gli articoli abbinati usa ESCLUSIVAMENTE il prezzo del listino come unit_price.
+- Se un articolo richiesto NON è nel listino: unit_price = null e total = null, e segnalalo nelle notes (es. "Articolo X non presente a listino: prezzo da confermare").
+- MAI inventare o stimare prezzi. Se la mail indica prezzi diversi dal listino, usa comunque il listino e segnala la differenza nelle notes.
+- subtotal = somma dei total non-null; se qualche riga è senza prezzo, indicalo nelle notes.`;
+
+/** Quante voci di listino al massimo entrano nel prompt. */
+const LISTINO_PROMPT_CAP = 150;
+
+/**
+ * Prefiltro gratuito lato codice per listini grandi: ordina le voci per
+ * sovrapposizione di parole con il testo della mail e tiene le prime N.
+ */
+function prefilterListino(items: PriceListItem[], emailText: string): PriceListItem[] {
+  if (items.length <= LISTINO_PROMPT_CAP) return items;
+  const emailWords = new Set(
+    emailText
+      .toLowerCase()
+      .split(/[^a-zà-ù0-9]+/)
+      .filter((w) => w.length > 2),
+  );
+  const scored = items.map((item) => {
+    const words = `${item.code ?? ""} ${item.description}`
+      .toLowerCase()
+      .split(/[^a-zà-ù0-9]+/)
+      .filter((w) => w.length > 2);
+    let score = 0;
+    for (const w of words) if (emailWords.has(w)) score++;
+    return { item, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, LISTINO_PROMPT_CAP).map((s) => s.item);
+}
+
+/** Blocco compatto del listino per il prompt: una riga per articolo. */
+function listinoBlock(items: PriceListItem[]): string {
+  const lines = items.map(
+    (i) => `${i.code ?? "-"} | ${i.description} | ${i.unit ?? "-"} | ${i.unit_price}`,
+  );
+  return `\n\nLISTINO PREZZI (CODICE | DESCRIZIONE | UNITÀ | PREZZO):\n${lines.join("\n")}`;
+}
+
 /**
  * Estrae i dati strutturati dal testo di una mail usando Claude.
- * `expectedType` è il tipo associato alla keyword che ha fatto match.
+ * `expectedType` è il tipo associato alla keyword/classificazione.
+ * `listino`, se presente, guida i prezzi: mai inventati, solo dal listino.
  */
 export async function extractDocument(
   bodyText: string,
   expectedType: DocType,
+  listino?: PriceListItem[],
 ): Promise<ExtractedDocument> {
+  const hasListino = Boolean(listino && listino.length > 0);
+  const listinoText = hasListino ? listinoBlock(prefilterListino(listino!, bodyText)) : "";
+
   const response = await client.messages.create({
     model: env.anthropic.model,
-    max_tokens: 2048,
-    system: SYSTEM_PROMPT,
+    max_tokens: 4096,
+    system: hasListino ? SYSTEM_PROMPT + LISTINO_RULES : SYSTEM_PROMPT,
     tools: [
       {
         name: "extract_document",
@@ -90,7 +143,7 @@ export async function extractDocument(
     messages: [
       {
         role: "user",
-        content: `Tipo di documento atteso: ${expectedType}.\n\nTesto dell'email:\n"""\n${bodyText}\n"""`,
+        content: `Tipo di documento atteso: ${expectedType}.\n\nTesto dell'email:\n"""\n${bodyText}\n"""${listinoText}`,
       },
     ],
   });

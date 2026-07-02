@@ -78,12 +78,33 @@ export const DEFAULT_SETTINGS: UserSettings = {
   smart_scan: 0,
 };
 
-/** Una riga di una fattura/preventivo/ordine. */
+/**
+ * Una riga di una fattura/preventivo/ordine.
+ * unit_price/total possono essere null: articolo richiesto ma non trovato nel
+ * listino (prezzo da completare a mano nell'editor — mai inventato dall'AI).
+ */
 export interface LineItem {
   description: string;
   quantity: number;
+  unit_price: number | null;
+  total: number | null;
+}
+
+/** Un articolo del listino prezzi dell'utente. */
+export interface PriceListItem {
+  code: string | null;
+  description: string;
+  unit: string | null;
   unit_price: number;
-  total: number;
+}
+
+export type PriceListSource = "sheet" | "pdf" | "csv";
+
+export interface PriceListMeta {
+  source_type: PriceListSource;
+  source_ref: string; // spreadsheetId oppure nome file
+  item_count: number;
+  synced_at: string;
 }
 
 /** Struttura dei dati estratti da Claude a partire dal testo della mail. */

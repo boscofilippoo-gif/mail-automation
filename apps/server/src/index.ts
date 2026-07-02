@@ -15,6 +15,7 @@ import { keywordsRouter } from "./routes/keywords.js";
 import { documentsRouter } from "./routes/documents.js";
 import { scanRouter } from "./routes/scan.js";
 import { settingsRouter } from "./routes/settings.js";
+import { listinoRouter } from "./routes/listino.js";
 import { scanAllUsers } from "./jobs/dailyScan.js";
 import { closePdfBrowser } from "./pdf/generate.js";
 
@@ -23,8 +24,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 migrate();
 
 const app = express();
-// limit 2mb: il logo in base64 (fino a ~700k caratteri) supera il default di 100KB
-app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use(
   cors({
@@ -32,6 +31,11 @@ app.use(
     credentials: true, // necessario per inviare il cookie di sessione (utile in dev cross-origin)
   }),
 );
+// listino: i PDF in base64 superano il limite globale → parser dedicato da 15mb,
+// montato PRIMA del parser globale (body-parser salta i body già letti)
+app.use("/api/listino", express.json({ limit: "15mb" }), listinoRouter);
+// limit 2mb: il logo in base64 (fino a ~700k caratteri) supera il default di 100KB
+app.use(express.json({ limit: "2mb" }));
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 

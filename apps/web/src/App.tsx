@@ -44,7 +44,8 @@ export function App() {
             </Link>
             <nav className="flex items-center gap-1">
               <TabLink to="/dashboard">Documenti</TabLink>
-              <TabLink to="/keywords">Parole chiave</TabLink>
+              <TabLink to="/keywords">Rilevamento</TabLink>
+              <TabLink to="/listino">Listino</TabLink>
               <TabLink to="/settings">Impostazioni</TabLink>
               <button
                 onClick={handleLogout}

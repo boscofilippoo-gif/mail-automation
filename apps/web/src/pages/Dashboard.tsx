@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Download, Eye, FileText, RefreshCw } from "lucide-react";
+import { Download, Eye, FileText, Pencil, RefreshCw } from "lucide-react";
 
 import { api, type DocumentItem, type ProcessedItem, type ScanResult } from "@/api";
 import { cn } from "@/lib/utils";
@@ -172,6 +172,13 @@ function DocCard({ doc }: { doc: DocumentItem }) {
           <Eye className="size-4" />
           Anteprima
         </a>
+        <Link
+          to={`/documents/${doc.id}/edit`}
+          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border py-2 text-sm transition-colors hover:border-accent"
+        >
+          <Pencil className="size-4" />
+          Modifica
+        </Link>
         <a
           href={api.pdfUrl(doc.id, true)}
           className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border py-2 text-sm transition-colors hover:border-accent"

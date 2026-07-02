@@ -52,16 +52,22 @@ export const env = {
     // modello economico per la classificazione delle mail (smart scan):
     // legge oggetto + inizio corpo e decide se è un documento commerciale
     classifyModel: optional("ANTHROPIC_CLASSIFY_MODEL", "claude-haiku-4-5"),
+    // modello per il parsing del listino (mapping colonne, lettura PDF)
+    listinoModel: optional("ANTHROPIC_LISTINO_MODEL", "claude-haiku-4-5"),
   },
 
   sessionSecret: required("SESSION_SECRET"),
   tokenEncKey: required("TOKEN_ENC_KEY"),
 } as const;
 
-/** Scope OAuth richiesti: identità di base + lettura Gmail. */
+/** Scope OAuth richiesti: identità di base + lettura Gmail + lettura Sheets (listino). */
 export const GOOGLE_SCOPES = [
   "openid",
   "email",
   "profile",
   "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/spreadsheets.readonly",
 ];
+
+/** Scope necessario per leggere il listino da Google Sheets. */
+export const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";

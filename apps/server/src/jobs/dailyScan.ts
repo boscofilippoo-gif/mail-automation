@@ -10,6 +10,7 @@ import {
   type CandidateMail,
 } from "../gmail/scan.js";
 import {
+  getPriceList,
   getUserSettings,
   insertDocument,
   isProcessed,
@@ -67,6 +68,8 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
   };
   const settings = getUserSettings(userId);
   const keywords = listActiveKeywords(userId);
+  // listino caricato una volta per run: guida i prezzi in estrazione
+  const listino = getPriceList(userId);
 
   if (keywords.length === 0 && !settings.smart_scan) {
     touchSync(userId);
@@ -78,7 +81,7 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
   /** Estrae, genera il PDF e persiste una mail. matchedKeyword='auto' = rilevata dall'AI. */
   const processMail = async (mail: CandidateMail, docType: DocType, matchedKeyword: string) => {
     try {
-      const extracted = await extractDocument(mail.bodyText || mail.subject, docType);
+      const extracted = await extractDocument(mail.bodyText || mail.subject, docType, listino?.items);
       const pdfPath = await generatePdf(extracted, settings);
       const docRecord = insertDocument({
         userId,

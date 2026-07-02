@@ -5,6 +5,9 @@ import {
   type DocType,
   type DocumentRecord,
   type Keyword,
+  type PriceListItem,
+  type PriceListMeta,
+  type PriceListSource,
   type Processed,
   type ProcessedStatus,
   type User,
@@ -172,6 +175,73 @@ export function getDocument(userId: number, id: number): DocumentRecord | undefi
   return db
     .prepare(`SELECT * FROM documents WHERE id = ? AND user_id = ?`)
     .get(id, userId) as DocumentRecord | undefined;
+}
+
+/** Aggiorna un documento dopo una modifica manuale (nuovo JSON + nuovo PDF). */
+export function updateDocument(
+  userId: number,
+  id: number,
+  extractedJson: string,
+  pdfPath: string,
+): void {
+  db.prepare(`UPDATE documents SET extracted_json = ?, pdf_path = ? WHERE id = ? AND user_id = ?`).run(
+    extractedJson,
+    pdfPath,
+    id,
+    userId,
+  );
+}
+
+/* ───────────────────────── Listino prezzi ───────────────────────── */
+
+export function getPriceList(
+  userId: number,
+): { meta: PriceListMeta; items: PriceListItem[] } | null {
+  const row = db.prepare(`SELECT * FROM price_lists WHERE user_id = ?`).get(userId) as
+    | { source_type: PriceListSource; source_ref: string; items_json: string; item_count: number; synced_at: string }
+    | undefined;
+  if (!row) return null;
+  return {
+    meta: {
+      source_type: row.source_type,
+      source_ref: row.source_ref,
+      item_count: row.item_count,
+      synced_at: row.synced_at,
+    },
+    items: JSON.parse(row.items_json) as PriceListItem[],
+  };
+}
+
+export function upsertPriceList(
+  userId: number,
+  sourceType: PriceListSource,
+  sourceRef: string,
+  items: PriceListItem[],
+): PriceListMeta {
+  db.prepare(
+    `INSERT INTO price_lists (user_id, source_type, source_ref, items_json, item_count, synced_at)
+     VALUES (@user_id, @source_type, @source_ref, @items_json, @item_count, datetime('now'))
+     ON CONFLICT(user_id) DO UPDATE SET
+       source_type = @source_type, source_ref = @source_ref, items_json = @items_json,
+       item_count = @item_count, synced_at = datetime('now')`,
+  ).run({
+    user_id: userId,
+    source_type: sourceType,
+    source_ref: sourceRef,
+    items_json: JSON.stringify(items),
+    item_count: items.length,
+  });
+  return getPriceList(userId)!.meta;
+}
+
+export function deletePriceList(userId: number): void {
+  db.prepare(`DELETE FROM price_lists WHERE user_id = ?`).run(userId);
+}
+
+/** true se i token OAuth salvati includono lo scope richiesto. */
+export function hasScope(userId: number, scope: string): boolean {
+  const t = getTokens(userId);
+  return Boolean(t?.scope?.includes(scope));
 }
 
 /* ───────────────────────── Impostazioni utente ───────────────────────── */

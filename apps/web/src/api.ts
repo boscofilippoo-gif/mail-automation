@@ -44,8 +44,8 @@ export interface Keyword {
 export interface LineItem {
   description: string;
   quantity: number;
-  unit_price: number;
-  total: number;
+  unit_price: number | null; // null = prezzo non trovato nel listino, da completare
+  total: number | null;
 }
 
 export interface ExtractedDocument {
@@ -53,6 +53,7 @@ export interface ExtractedDocument {
   customer_name: string;
   customer_email: string | null;
   customer_vat: string | null;
+  customer_address: string | null;
   document_number: string | null;
   document_date: string | null;
   currency: string;
@@ -62,6 +63,27 @@ export interface ExtractedDocument {
   total: number | null;
   notes: string | null;
 }
+
+export interface PriceListItem {
+  code: string | null;
+  description: string;
+  unit: string | null;
+  unit_price: number;
+}
+
+export type ListinoState =
+  | { connected: false }
+  | {
+      connected: true;
+      source_type: "sheet" | "pdf" | "csv";
+      source_ref: string;
+      item_count: number;
+      synced_at: string;
+      preview: PriceListItem[];
+    };
+
+/** Risposta delle route listino che possono chiedere la riautorizzazione Google. */
+export type ListinoResult = ListinoState | { error: string; needsReauth?: boolean };
 
 export interface DocumentItem {
   id: number;
@@ -124,6 +146,29 @@ export const api = {
     request<UserSettings>("/api/settings", { method: "PUT", body: JSON.stringify(s) }),
   previewSettings: (s: Partial<UserSettings>) =>
     requestText("/api/settings/preview", { method: "POST", body: JSON.stringify(s) }),
+
+  getListino: () => request<ListinoState>("/api/listino"),
+  connectSheet: (url: string) =>
+    request<ListinoResult>("/api/listino/sheet", { method: "POST", body: JSON.stringify({ url }) }),
+  syncListino: () => request<ListinoResult>("/api/listino/sync", { method: "POST" }),
+  uploadListino: (filename: string, data: string, kind: "pdf" | "csv") =>
+    request<ListinoResult>("/api/listino/upload", {
+      method: "POST",
+      body: JSON.stringify({ filename, data, kind }),
+    }),
+  deleteListino: () => request<{ ok: true }>("/api/listino", { method: "DELETE" }),
+
+  getDocument: (id: number) =>
+    request<{ id: number; type: DocType; createdAt: string; data: ExtractedDocument }>(
+      `/api/documents/${id}`,
+    ),
+  updateDocument: (id: number, data: ExtractedDocument) =>
+    request<{ id: number; type: DocType; createdAt: string; data: ExtractedDocument }>(
+      `/api/documents/${id}`,
+      { method: "PUT", body: JSON.stringify({ data }) },
+    ),
+  previewDocument: (data: ExtractedDocument) =>
+    requestText("/api/documents/preview", { method: "POST", body: JSON.stringify({ data }) }),
 
   pdfUrl: (id: number, download = false) =>
     `/api/documents/${id}/pdf${download ? "?download=1" : ""}`,
