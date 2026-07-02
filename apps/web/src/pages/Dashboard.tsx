@@ -56,7 +56,13 @@ export function Dashboard() {
       {result && (
         <p className="mt-4 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
           Scan completato — {result.created} documenti generati · {result.skipped} già visti ·{" "}
-          {result.errors} errori.
+          {result.errors} errori
+          {result.classified > 0 && (
+            <>
+              {" "}· {result.classified} analizzate dall'AI · {result.skippedIrrelevant} ignorate
+            </>
+          )}
+          .
         </p>
       )}
       {error && <p className="mt-4 text-sm" style={{ color: "var(--rosa)" }}>{error}</p>}
@@ -99,20 +105,31 @@ export function Dashboard() {
                 <span className="min-w-0 flex-1 truncate text-muted-foreground">
                   {p.subject || "(senza oggetto)"}
                 </span>
-                <span className="shrink-0 font-mono text-xs text-muted-foreground/70">
-                  {p.matched_keyword}
-                </span>
+                {p.matched_keyword === "auto" ? (
+                  <span
+                    className="shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider"
+                    style={{ background: "color-mix(in oklab, var(--rosa) 18%, transparent)" }}
+                  >
+                    AI
+                  </span>
+                ) : (
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground/70">
+                    {p.matched_keyword}
+                  </span>
+                )}
                 <span
                   className="shrink-0 rounded-full px-2.5 py-0.5 text-xs"
                   style={{
                     background:
                       p.status === "done"
                         ? "color-mix(in oklab, var(--azzurro) 22%, transparent)"
-                        : "color-mix(in oklab, var(--rosa) 22%, transparent)",
+                        : p.status === "skipped"
+                          ? "color-mix(in oklab, var(--porcellana) 12%, transparent)"
+                          : "color-mix(in oklab, var(--rosa) 22%, transparent)",
                   }}
                   title={p.error ?? undefined}
                 >
-                  {p.status === "done" ? "OK" : "Errore"}
+                  {p.status === "done" ? "OK" : p.status === "skipped" ? "Ignorata" : "Errore"}
                 </span>
               </div>
             ))}

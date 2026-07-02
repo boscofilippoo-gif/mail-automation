@@ -1,12 +1,14 @@
 import { db } from "./db.js";
 import { encrypt, decrypt } from "./crypto.js";
-import type {
-  DocType,
-  DocumentRecord,
-  Keyword,
-  Processed,
-  ProcessedStatus,
-  User,
+import {
+  DEFAULT_SETTINGS,
+  type DocType,
+  type DocumentRecord,
+  type Keyword,
+  type Processed,
+  type ProcessedStatus,
+  type User,
+  type UserSettings,
 } from "./types.js";
 
 /* ───────────────────────── Utenti ───────────────────────── */
@@ -170,6 +172,45 @@ export function getDocument(userId: number, id: number): DocumentRecord | undefi
   return db
     .prepare(`SELECT * FROM documents WHERE id = ? AND user_id = ?`)
     .get(id, userId) as DocumentRecord | undefined;
+}
+
+/* ───────────────────────── Impostazioni utente ───────────────────────── */
+
+export function getUserSettings(userId: number): UserSettings {
+  const row = db.prepare(`SELECT * FROM user_settings WHERE user_id = ?`).get(userId) as
+    | (UserSettings & { user_id: number })
+    | undefined;
+  if (!row) return { ...DEFAULT_SETTINGS };
+  return {
+    template_id: row.template_id,
+    accent_color: row.accent_color,
+    company_name: row.company_name,
+    company_address: row.company_address,
+    company_vat: row.company_vat,
+    company_email: row.company_email,
+    company_phone: row.company_phone,
+    footer_note: row.footer_note,
+    logo_data_url: row.logo_data_url,
+    smart_scan: row.smart_scan,
+  };
+}
+
+export function upsertUserSettings(userId: number, patch: Partial<UserSettings>): UserSettings {
+  const merged: UserSettings = { ...getUserSettings(userId), ...patch };
+  db.prepare(
+    `INSERT INTO user_settings
+       (user_id, template_id, accent_color, company_name, company_address, company_vat,
+        company_email, company_phone, footer_note, logo_data_url, smart_scan, updated_at)
+     VALUES
+       (@user_id, @template_id, @accent_color, @company_name, @company_address, @company_vat,
+        @company_email, @company_phone, @footer_note, @logo_data_url, @smart_scan, datetime('now'))
+     ON CONFLICT(user_id) DO UPDATE SET
+       template_id = @template_id, accent_color = @accent_color, company_name = @company_name,
+       company_address = @company_address, company_vat = @company_vat, company_email = @company_email,
+       company_phone = @company_phone, footer_note = @footer_note, logo_data_url = @logo_data_url,
+       smart_scan = @smart_scan, updated_at = datetime('now')`,
+  ).run({ user_id: userId, ...merged });
+  return merged;
 }
 
 /* ───────────────────────── Sync state ───────────────────────── */

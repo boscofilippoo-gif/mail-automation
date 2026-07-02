@@ -1,34 +1,42 @@
-import type { DocType, ExtractedDocument } from "../types.js";
+import type { ExtractedDocument, TemplateSettings } from "../../types.js";
+import {
+  AZZURRO,
+  DOC_LABEL,
+  NERO,
+  PORCELLANA,
+  defaultAccent,
+  esc,
+  money,
+  safeColor,
+} from "../helpers.js";
 
-// Palette brand BORU, riusata per coerenza visiva con l'ecosistema.
-const NERO = "#1a1613";
-const PORCELLANA = "#fcfaf6";
-const AZZURRO = "#b1ddf1";
-const ROSA = "#ef95b4";
-
-const DOC_LABEL: Record<DocType, string> = {
-  fattura: "Fattura",
-  preventivo: "Preventivo",
-  ordine: "Ordine",
-};
-
-function esc(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  return String(v)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+/** Blocco "Mittente" coi dati azienda, solo se almeno un campo è compilato. */
+function senderBlock(s: TemplateSettings): string {
+  const rows = [
+    s.company_name ? `<p><strong>${esc(s.company_name)}</strong></p>` : "",
+    s.company_vat ? `<p>P.IVA / CF: ${esc(s.company_vat)}</p>` : "",
+    s.company_address ? `<p>${esc(s.company_address)}</p>` : "",
+    s.company_email ? `<p>${esc(s.company_email)}</p>` : "",
+    s.company_phone ? `<p>${esc(s.company_phone)}</p>` : "",
+  ].join("");
+  if (!rows) return "";
+  return `<div class="party"><h3>Mittente</h3>${rows}</div>`;
 }
 
-function money(n: number | null, currency: string): string {
-  if (n === null || n === undefined || Number.isNaN(n)) return "—";
-  return new Intl.NumberFormat("it-IT", { style: "currency", currency: currency || "EUR" }).format(n);
-}
-
-/** Costruisce l'HTML del documento a partire dai dati estratti. */
-export function renderDocumentHtml(doc: ExtractedDocument): string {
-  const accent = doc.doc_type === "fattura" ? AZZURRO : ROSA;
+export function renderClassic(doc: ExtractedDocument, s: TemplateSettings): string {
+  const accent = safeColor(s.accent_color, defaultAccent(doc.doc_type));
+  // colore del titolo: con accento custom usiamo l'accento stesso; altrimenti
+  // le tinte scure storiche leggibili su porcellana
+  const titleColor = s.accent_color
+    ? accent
+    : accent === AZZURRO
+      ? "#2b6f8c"
+      : "#b5446a";
   const label = DOC_LABEL[doc.doc_type] ?? "Documento";
+
+  const brandHtml = s.logo_data_url
+    ? `<img src="${esc(s.logo_data_url)}" alt="" style="max-height:56px;max-width:200px;object-fit:contain;display:block" />`
+    : `<div class="brand">${esc(s.company_name ?? "BORU studio")}<small>${s.company_name ? "" : "Mail Automation"}</small></div>`;
 
   const rows = doc.line_items
     .map(
@@ -41,6 +49,10 @@ export function renderDocumentHtml(doc: ExtractedDocument): string {
       </tr>`,
     )
     .join("");
+
+  const footerText = s.footer_note
+    ? esc(s.footer_note)
+    : "Documento generato automaticamente da BORU Mail Automation a partire da un'email. I dati sono estratti tramite AI e vanno verificati prima dell'uso ufficiale.";
 
   return `<!doctype html>
 <html lang="it">
@@ -61,7 +73,7 @@ export function renderDocumentHtml(doc: ExtractedDocument): string {
   .brand { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
   .brand small { display: block; font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 2px; color: #6b6357; margin-top: 4px; }
   .doc-meta { text-align: right; }
-  .doc-type { font-size: 26px; font-weight: 700; text-transform: uppercase; color: ${accent === AZZURRO ? "#2b6f8c" : "#b5446a"}; }
+  .doc-type { font-size: 26px; font-weight: 700; text-transform: uppercase; color: ${titleColor}; }
   .doc-meta .sub { color: #6b6357; font-size: 12px; }
   .parties { display: flex; justify-content: space-between; margin: 32px 0; gap: 32px; }
   .party h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #6b6357; margin: 0 0 6px; }
@@ -80,7 +92,7 @@ export function renderDocumentHtml(doc: ExtractedDocument): string {
 <body>
   <div class="page">
     <header>
-      <div class="brand">BORU studio<small>Mail Automation</small></div>
+      ${brandHtml}
       <div class="doc-meta">
         <div class="doc-type">${esc(label)}</div>
         <div class="sub">${doc.document_number ? "N. " + esc(doc.document_number) : ""}</div>
@@ -89,6 +101,7 @@ export function renderDocumentHtml(doc: ExtractedDocument): string {
     </header>
 
     <div class="parties">
+      ${senderBlock(s)}
       <div class="party">
         <h3>Destinatario</h3>
         <p><strong>${esc(doc.customer_name) || "—"}</strong></p>
@@ -120,10 +133,7 @@ export function renderDocumentHtml(doc: ExtractedDocument): string {
 
     ${doc.notes ? `<div class="notes">${esc(doc.notes)}</div>` : ""}
 
-    <footer>
-      Documento generato automaticamente da BORU Mail Automation a partire da un'email.
-      I dati sono estratti tramite AI e vanno verificati prima dell'uso ufficiale.
-    </footer>
+    <footer>${footerText}</footer>
   </div>
 </body>
 </html>`;

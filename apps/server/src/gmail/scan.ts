@@ -57,6 +57,44 @@ function header(headers: gmail_v1.Schema$MessagePartHeader[] | undefined, name: 
 }
 
 /**
+ * Lista SOLO gli ID dei messaggi che matchano una query Gmail.
+ * Economico: nessun contenuto scaricato. Permette di filtrare i già-processati
+ * PRIMA di idratare (meno chiamate API, zero costo AI sulle mail già viste).
+ */
+export async function listMessageIds(
+  client: OAuth2Client,
+  q: string,
+  maxResults: number,
+): Promise<string[]> {
+  const gmail = google.gmail({ version: "v1", auth: client });
+  const list = await gmail.users.messages.list({ userId: "me", q, maxResults });
+  return (list.data.messages ?? []).map((m) => m.id!).filter(Boolean);
+}
+
+/** Scarica e normalizza UN messaggio (oggetto, mittente, corpo in testo). */
+export async function hydrateMessage(client: OAuth2Client, id: string): Promise<CandidateMail> {
+  const gmail = google.gmail({ version: "v1", auth: client });
+  const msg = await gmail.users.messages.get({ userId: "me", id, format: "full" });
+  const headers = msg.data.payload?.headers;
+  return {
+    id,
+    subject: header(headers, "Subject"),
+    from: header(headers, "From"),
+    date: header(headers, "Date"),
+    bodyText: extractBodyText(msg.data.payload),
+  };
+}
+
+/**
+ * Query dello smart scan: mail recenti dell'inbox, senza filtro sull'oggetto.
+ * NIENTE `-from:me`: le mail auto-inviate sono il percorso di test/demo
+ * dell'utente (si manda una mail e prova lo scan) — non escluderle mai.
+ */
+export function smartScanQuery(newerThanDays: number): string {
+  return `newer_than:${newerThanDays}d in:inbox -in:chats -category:promotions -category:social`;
+}
+
+/**
  * Cerca le mail recenti che matchano un termine nell'oggetto.
  * Query Gmail: `subject:(term) newer_than:Nd` — semplice e robusta per uno scan periodico.
  * Ritorna i candidati completi (con testo del corpo) pronti per l'estrazione.
@@ -67,23 +105,10 @@ export async function searchMessages(
   newerThanDays = 2,
   maxResults = 25,
 ): Promise<CandidateMail[]> {
-  const gmail = google.gmail({ version: "v1", auth: client });
-  const q = `subject:(${term}) newer_than:${newerThanDays}d`;
-
-  const list = await gmail.users.messages.list({ userId: "me", q, maxResults });
-  const ids = (list.data.messages ?? []).map((m) => m.id!).filter(Boolean);
-
+  const ids = await listMessageIds(client, `subject:(${term}) newer_than:${newerThanDays}d`, maxResults);
   const out: CandidateMail[] = [];
   for (const id of ids) {
-    const msg = await gmail.users.messages.get({ userId: "me", id, format: "full" });
-    const headers = msg.data.payload?.headers;
-    out.push({
-      id,
-      subject: header(headers, "Subject"),
-      from: header(headers, "From"),
-      date: header(headers, "Date"),
-      bodyText: extractBodyText(msg.data.payload),
-    });
+    out.push(await hydrateMessage(client, id));
   }
   return out;
 }

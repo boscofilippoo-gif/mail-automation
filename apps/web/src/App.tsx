@@ -45,6 +45,7 @@ export function App() {
             <nav className="flex items-center gap-1">
               <TabLink to="/dashboard">Documenti</TabLink>
               <TabLink to="/keywords">Parole chiave</TabLink>
+              <TabLink to="/settings">Impostazioni</TabLink>
               <button
                 onClick={handleLogout}
                 className="ml-2 inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"

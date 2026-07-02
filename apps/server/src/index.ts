@@ -14,6 +14,7 @@ import { meRouter } from "./routes/me.js";
 import { keywordsRouter } from "./routes/keywords.js";
 import { documentsRouter } from "./routes/documents.js";
 import { scanRouter } from "./routes/scan.js";
+import { settingsRouter } from "./routes/settings.js";
 import { scanAllUsers } from "./jobs/dailyScan.js";
 import { closePdfBrowser } from "./pdf/generate.js";
 
@@ -22,7 +23,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 migrate();
 
 const app = express();
-app.use(express.json());
+// limit 2mb: il logo in base64 (fino a ~700k caratteri) supera il default di 100KB
+app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use(
   cors({
@@ -38,6 +40,7 @@ app.use("/api/me", meRouter);
 app.use("/api/keywords", keywordsRouter);
 app.use("/api/documents", documentsRouter);
 app.use("/api/scan", scanRouter);
+app.use("/api/settings", settingsRouter);
 
 // ── In produzione il server serve anche il frontend buildato (single service) ──
 // Il build del frontend finisce in apps/web/dist; da dist/index.js del server

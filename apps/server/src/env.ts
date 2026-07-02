@@ -49,6 +49,9 @@ export const env = {
   anthropic: {
     apiKey: required("ANTHROPIC_API_KEY"),
     model: optional("ANTHROPIC_MODEL", "claude-opus-4-8"),
+    // modello economico per la classificazione delle mail (smart scan):
+    // legge oggetto + inizio corpo e decide se è un documento commerciale
+    classifyModel: optional("ANTHROPIC_CLASSIFY_MODEL", "claude-haiku-4-5"),
   },
 
   sessionSecret: required("SESSION_SECRET"),

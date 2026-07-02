@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Sparkles, Trash2 } from "lucide-react";
 
 import { api, type DocType, type Keyword } from "@/api";
 import { cn } from "@/lib/utils";
@@ -12,11 +12,27 @@ export function Keywords() {
   const [docType, setDocType] = useState<DocType>("preventivo");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [smartScan, setSmartScan] = useState<boolean | null>(null);
 
   function reload() {
     api.listKeywords().then(setKeywords).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }
   useEffect(reload, []);
+  useEffect(() => {
+    api.getSettings().then((s) => setSmartScan(Boolean(s.smart_scan))).catch(() => setSmartScan(false));
+  }, []);
+
+  async function toggleSmartScan() {
+    if (smartScan === null) return;
+    const next = !smartScan;
+    setSmartScan(next); // ottimistico
+    try {
+      await api.saveSettings({ smart_scan: next ? 1 : 0 });
+    } catch (e) {
+      setSmartScan(!next); // rollback
+      setError(e instanceof Error ? e.message : "Errore nel salvataggio");
+    }
+  }
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -44,13 +60,51 @@ export function Keywords() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight">Parole chiave</h1>
-      <p className="mt-2 max-w-2xl text-muted-foreground">
-        Aggiungi le parole da cercare nell'<strong>oggetto</strong> delle mail. Quando una mail
-        recente le contiene, il sistema genera il documento del tipo scelto.
+      <h1 className="text-2xl font-semibold tracking-tight">Rilevamento mail</h1>
+
+      {/* ── Smart scan AI ── */}
+      <div className="mt-8 flex items-start justify-between gap-6 rounded-2xl border border-border bg-card p-6">
+        <div className="flex items-start gap-4">
+          <Sparkles className="mt-1 size-5 shrink-0" style={{ color: "var(--rosa)" }} />
+          <div>
+            <h2 className="font-semibold">Rilevamento automatico con AI</h2>
+            <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
+              L'AI analizza le mail recenti e riconosce da sola preventivi, ordini e fatture —
+              senza bisogno di parole chiave. Ogni mail viene analizzata una sola volta.
+            </p>
+          </div>
+        </div>
+        <button
+          role="switch"
+          aria-checked={smartScan ?? false}
+          onClick={toggleSmartScan}
+          disabled={smartScan === null}
+          className={cn(
+            "relative h-7 w-12 shrink-0 rounded-full border transition-colors disabled:opacity-50",
+            smartScan ? "border-transparent" : "border-border bg-transparent",
+          )}
+          style={smartScan ? { background: "var(--azzurro)" } : undefined}
+        >
+          <span
+            className={cn(
+              "absolute top-0.5 size-[22px] rounded-full bg-foreground transition-transform",
+              smartScan ? "translate-x-[22px]" : "translate-x-0.5",
+            )}
+            style={smartScan ? { background: "var(--nero)" } : undefined}
+          />
+        </button>
+      </div>
+
+      <h2 className="mt-12 text-lg font-semibold tracking-tight">
+        {smartScan ? "Filtri aggiuntivi per parola chiave" : "Parole chiave"}
+      </h2>
+      <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+        {smartScan
+          ? "In aggiunta al rilevamento automatico, puoi cercare parole specifiche nell'oggetto delle mail."
+          : "Aggiungi le parole da cercare nell'oggetto delle mail. Quando una mail recente le contiene, il sistema genera il documento del tipo scelto."}
       </p>
 
-      <form onSubmit={add} className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <form onSubmit={add} className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
         <input
           value={term}
           onChange={(e) => setTerm(e.target.value)}

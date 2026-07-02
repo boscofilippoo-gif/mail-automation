@@ -71,6 +71,21 @@ export function migrate(): void {
       user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       last_run_at  TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS user_settings (
+      user_id         INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      template_id     TEXT NOT NULL DEFAULT 'classic',
+      accent_color    TEXT,
+      company_name    TEXT,
+      company_address TEXT,
+      company_vat     TEXT,
+      company_email   TEXT,
+      company_phone   TEXT,
+      footer_note     TEXT,
+      logo_data_url   TEXT,           -- data URL base64, max ~700k caratteri (validato lato route)
+      smart_scan      INTEGER NOT NULL DEFAULT 0,
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 }
 

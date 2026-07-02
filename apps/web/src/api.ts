@@ -12,6 +12,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Come request, ma per endpoint che rispondono HTML/testo (es. anteprima). */
+async function requestText(path: string, init?: RequestInit): Promise<string> {
+  const res = await fetch(path, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    ...init,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `Errore ${res.status}`);
+  }
+  return res.text();
+}
+
 export type DocType = "fattura" | "preventivo" | "ordine";
 
 export interface Me {
@@ -62,7 +76,7 @@ export interface ProcessedItem {
   gmail_message_id: string;
   subject: string | null;
   matched_keyword: string | null;
-  status: "done" | "error";
+  status: "done" | "error" | "skipped";
   error: string | null;
   processed_at: string;
 }
@@ -72,6 +86,21 @@ export interface ScanResult {
   created: number;
   errors: number;
   skipped: number;
+  classified: number;
+  skippedIrrelevant: number;
+}
+
+export interface UserSettings {
+  template_id: string;
+  accent_color: string | null;
+  company_name: string | null;
+  company_address: string | null;
+  company_vat: string | null;
+  company_email: string | null;
+  company_phone: string | null;
+  footer_note: string | null;
+  logo_data_url: string | null;
+  smart_scan: number;
 }
 
 export const api = {
@@ -89,6 +118,12 @@ export const api = {
   listDocuments: () => request<DocumentItem[]>("/api/documents"),
   listProcessed: () => request<ProcessedItem[]>("/api/documents/processed"),
   scanNow: () => request<ScanResult>("/api/scan", { method: "POST" }),
+
+  getSettings: () => request<UserSettings>("/api/settings"),
+  saveSettings: (s: Partial<UserSettings>) =>
+    request<UserSettings>("/api/settings", { method: "PUT", body: JSON.stringify(s) }),
+  previewSettings: (s: Partial<UserSettings>) =>
+    requestText("/api/settings/preview", { method: "POST", body: JSON.stringify(s) }),
 
   pdfUrl: (id: number, download = false) =>
     `/api/documents/${id}/pdf${download ? "?download=1" : ""}`,
