@@ -127,6 +127,8 @@ export function migrate(): void {
   ensureColumn("user_settings", "auto_draft", "auto_draft INTEGER NOT NULL DEFAULT 0");
   ensureColumn("documents", "sent_status", "sent_status TEXT NOT NULL DEFAULT 'da_inviare'");
   ensureColumn("documents", "draft_id", "draft_id TEXT");
+  ensureColumn("processed", "scan_run_id", "scan_run_id INTEGER"); // null per righe pre-feature
+  ensureColumn("price_lists", "api_config_enc", "api_config_enc TEXT"); // config connettore API, cifrata
   ensureColumn("processed", "category", "category TEXT");
   ensureColumn("processed", "detail", "detail TEXT");
 }

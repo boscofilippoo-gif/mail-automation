@@ -143,6 +143,7 @@ documentsRouter.get("/:id", (req, res) => {
     createdAt: doc.created_at,
     sentStatus: doc.sent_status,
     draftId: doc.draft_id,
+    sourceMessageId: doc.source_message_id,
     data: JSON.parse(doc.extracted_json),
   });
 });

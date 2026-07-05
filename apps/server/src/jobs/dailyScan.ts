@@ -14,17 +14,18 @@ import {
   type ScanWindow,
 } from "../gmail/scan.js";
 import {
+  createScanRun,
   getPriceList,
   getUserSettings,
   hasScope,
   insertDocument,
-  insertScanRun,
   isProcessed,
   listActiveKeywords,
   listActiveUserIds,
   recordProcessed,
   touchSync,
   updateDocumentStatus,
+  updateScanRunCounters,
 } from "../repo.js";
 import type { DocType, PriceListItem, UserSettings } from "../types.js";
 
@@ -77,6 +78,7 @@ export async function processSingleMail(args: {
   listino: PriceListItem[] | undefined;
   category?: string | null;
   detail?: string | null;
+  scanRunId?: number | null;
 }): Promise<SingleMailOutcome> {
   const { userId, client, mail, docType, matchedKeyword, settings, listino } = args;
   const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -113,6 +115,7 @@ export async function processSingleMail(args: {
       error: null,
       category: args.category ?? null,
       detail: args.detail ?? null,
+      scanRunId: args.scanRunId ?? null,
     });
 
     // ── bozza automatica (opzionale): fallimento tollerato, il documento esiste ──
@@ -159,6 +162,7 @@ export async function processSingleMail(args: {
       error: message,
       category: args.category ?? null,
       detail: args.detail ?? null,
+      scanRunId: args.scanRunId ?? null,
     });
     return { ok: false, error: message };
   }
@@ -170,7 +174,11 @@ export async function processSingleMail(args: {
  *  2. smart scan AI, se abilitato nelle impostazioni
  * Ogni messaggio è gestito in isolamento: un errore non blocca gli altri.
  */
-export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OPTS): Promise<ScanResult> {
+export async function scanUser(
+  userId: number,
+  opts: ScanOptions = DAILY_SCAN_OPTS,
+  runId: number | null = null,
+): Promise<ScanResult> {
   const result: ScanResult = {
     scanned: 0,
     created: 0,
@@ -227,6 +235,7 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
           matchedKeyword: kw.term,
           settings,
           listino: listino?.items,
+          scanRunId: runId,
         }),
       );
     }
@@ -287,6 +296,7 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
             listino: listino?.items,
             category: cls.category,
             detail: cls.reason,
+            scanRunId: runId,
           }),
         );
       } else {
@@ -301,6 +311,7 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
           error: null,
           category: cls.category,
           detail: cls.reason,
+          scanRunId: runId,
         });
         result.skippedIrrelevant++;
       }
@@ -325,9 +336,10 @@ export async function scanAllUsers(): Promise<void> {
   console.log(`[scan] avvio scan giornaliero per ${ids.length} utenti`);
   for (const id of ids) {
     try {
-      const r = await scanUser(id, DAILY_SCAN_OPTS);
-      // storico: anche i run "vuoti" mostrano all'utente che il sistema ha girato
-      insertScanRun(id, "giornaliero", null, r);
+      // run creato PRIMA: le mail elaborate lo riferiscono via scan_run_id
+      const runId = createScanRun(id, "giornaliero", null);
+      const r = await scanUser(id, DAILY_SCAN_OPTS, runId);
+      updateScanRunCounters(runId, r);
       console.log(`[scan] user ${id}:`, r);
     } catch (err) {
       console.error(`[scan] scan fallito per user ${id}:`, err);

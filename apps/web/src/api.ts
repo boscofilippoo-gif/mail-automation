@@ -75,7 +75,7 @@ export type ListinoState =
   | { connected: false }
   | {
       connected: true;
-      source_type: "sheet" | "pdf" | "csv";
+      source_type: "sheet" | "pdf" | "csv" | "api";
       source_ref: string;
       item_count: number;
       synced_at: string;
@@ -187,6 +187,7 @@ export const api = {
   retryProcessed: (id: number) =>
     request<RetryResult>(`/api/scan/processed/${id}/retry`, { method: "POST" }),
   listScanHistory: () => request<ScanRun[]>("/api/scan/history"),
+  listRunMails: (runId: number) => request<ProcessedItem[]>(`/api/scan/history/${runId}/mails`),
 
   getSettings: () => request<UserSettings>("/api/settings"),
   saveSettings: (s: Partial<UserSettings>) =>
@@ -198,6 +199,8 @@ export const api = {
   connectSheet: (url: string) =>
     request<ListinoResult>("/api/listino/sheet", { method: "POST", body: JSON.stringify({ url }) }),
   syncListino: () => request<ListinoResult>("/api/listino/sync", { method: "POST" }),
+  connectApi: (config: { url: string; authType: string; headerName?: string; secret?: string }) =>
+    request<ListinoResult>("/api/listino/api", { method: "POST", body: JSON.stringify(config) }),
   uploadListino: (filename: string, data: string, kind: "pdf" | "csv") =>
     request<ListinoResult>("/api/listino/upload", {
       method: "POST",
@@ -206,7 +209,7 @@ export const api = {
   deleteListino: () => request<{ ok: true }>("/api/listino", { method: "DELETE" }),
 
   getDocument: (id: number) =>
-    request<{ id: number; type: DocType; createdAt: string; data: ExtractedDocument }>(
+    request<{ id: number; type: DocType; createdAt: string; sourceMessageId: string; data: ExtractedDocument }>(
       `/api/documents/${id}`,
     ),
   updateDocument: (id: number, data: ExtractedDocument) =>
@@ -231,4 +234,12 @@ export const api = {
 /** Avvia il flusso OAuth: redirect del browser verso il backend. */
 export function loginWithGoogle() {
   window.location.href = "/auth/google";
+}
+
+/**
+ * Link diretto al messaggio su Gmail web. Nota: `u/0` = primo account del
+ * browser; con più account Google può aprire quello sbagliato (limite Gmail).
+ */
+export function gmailUrl(messageId: string): string {
+  return `https://mail.google.com/mail/u/0/#all/${messageId}`;
 }

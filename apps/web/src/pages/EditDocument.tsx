@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, ChevronDown, Loader2, Mail, Plus, Send, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ChevronDown, ExternalLink, Loader2, Mail, Plus, Send, Trash2 } from "lucide-react";
 
-import { api, type ExtractedDocument, type LineItem, type SourceMail } from "@/api";
+import { api, gmailUrl, type ExtractedDocument, type LineItem, type SourceMail } from "@/api";
 import { cn } from "@/lib/utils";
 
 const inputCls =
@@ -32,6 +32,7 @@ export function EditDocument() {
   const navigate = useNavigate();
   const [draft, setDraft] = useState<ExtractedDocument | null>(null);
   const [docType, setDocType] = useState<string>("");
+  const [sourceMessageId, setSourceMessageId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +42,7 @@ export function EditDocument() {
       .then((d) => {
         setDraft(recalc(d.data));
         setDocType(d.type);
+        setSourceMessageId(d.sourceMessageId ?? null);
       })
       .catch((e) => setError(e.message));
   }, [id]);
@@ -150,7 +152,7 @@ export function EditDocument() {
 
       <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_420px]">
         <div className="space-y-8">
-          <SourceMailSection docId={Number(id)} />
+          <SourceMailSection docId={Number(id)} sourceMessageId={sourceMessageId} />
 
           {/* Cliente */}
           <section>
@@ -259,7 +261,7 @@ export function EditDocument() {
 }
 
 /** Mail originale del cliente: collassabile, caricata da Gmail solo al primo click. */
-function SourceMailSection({ docId }: { docId: number }) {
+function SourceMailSection({ docId, sourceMessageId }: { docId: number; sourceMessageId: string | null }) {
   const [open, setOpen] = useState(false);
   const [mail, setMail] = useState<SourceMail | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
@@ -298,7 +300,20 @@ function SourceMailSection({ docId }: { docId: number }) {
           )}
           {mail && (
             <>
-              <p className="font-medium">{mail.subject || "(senza oggetto)"}</p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-medium">{mail.subject || "(senza oggetto)"}</p>
+                {sourceMessageId && (
+                  <a
+                    href={gmailUrl(sourceMessageId)}
+                    target="_blank"
+                    rel="noopener"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-foreground"
+                  >
+                    <ExternalLink className="size-3" />
+                    Apri in Gmail
+                  </a>
+                )}
+              </div>
               <p className="mt-1 text-xs text-muted-foreground">
                 {mail.from} · {mail.date}
               </p>

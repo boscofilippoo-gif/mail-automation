@@ -2,12 +2,19 @@ import { Router } from "express";
 
 import { requireAuth } from "../auth/session.js";
 import { SHEETS_SCOPE } from "../env.js";
-import { deletePriceList, getPriceList, hasScope, upsertPriceList } from "../repo.js";
+import {
+  deletePriceList,
+  getPriceList,
+  getPriceListApiConfig,
+  hasScope,
+  upsertPriceList,
+} from "../repo.js";
 import { applyMapping, parseCsv, MAX_ITEMS } from "../listino/parse.js";
 import { mapColumns } from "../listino/mapColumns.js";
 import { fetchSheetRows, NeedsReauthError, parseSheetUrl } from "../listino/sheet.js";
 import { extractListinoFromPdf } from "../listino/pdf.js";
-import type { PriceListItem } from "../types.js";
+import { fetchApiItems } from "../listino/api.js";
+import type { ApiConnectorConfig, PriceListItem } from "../types.js";
 
 export const listinoRouter = Router();
 
@@ -67,18 +74,35 @@ listinoRouter.post("/sheet", async (req, res) => {
   }
 });
 
-/** Risincronizza il foglio già collegato. */
+/** Risincronizza la fonte già collegata (Google Sheet o API). */
 listinoRouter.post("/sync", async (req, res) => {
   const pl = getPriceList(req.userId!);
-  if (!pl || pl.meta.source_type !== "sheet") {
-    res.status(400).json({ error: "Nessun Google Sheet collegato da sincronizzare." });
+  if (!pl || (pl.meta.source_type !== "sheet" && pl.meta.source_type !== "api")) {
+    res.status(400).json({ error: "Nessuna fonte sincronizzabile collegata (Google Sheet o API)." });
     return;
   }
-  if (!hasScope(req.userId!, SHEETS_SCOPE)) {
-    res.json({ error: "Servono nuovi permessi Google per leggere il foglio.", needsReauth: true });
-    return;
-  }
+
   try {
+    if (pl.meta.source_type === "api") {
+      const config = getPriceListApiConfig(req.userId!);
+      if (!config) {
+        res.status(400).json({ error: "Configurazione API mancante: ricollega la fonte." });
+        return;
+      }
+      const items = await fetchApiItems(config);
+      if (items.length === 0) {
+        res.status(400).json({ error: "Nessun articolo con prezzo nella risposta API." });
+        return;
+      }
+      upsertPriceList(req.userId!, "api", pl.meta.source_ref, items, config);
+      res.json(stateResponse(req.userId!));
+      return;
+    }
+
+    if (!hasScope(req.userId!, SHEETS_SCOPE)) {
+      res.json({ error: "Servono nuovi permessi Google per leggere il foglio.", needsReauth: true });
+      return;
+    }
     await syncSheet(req.userId!, pl.meta.source_ref);
     res.json(stateResponse(req.userId!));
   } catch (err) {
@@ -87,6 +111,40 @@ listinoRouter.post("/sync", async (req, res) => {
       return;
     }
     res.status(400).json({ error: err instanceof Error ? err.message : "Errore nella sincronizzazione" });
+  }
+});
+
+/** Collega un'API REST/JSON: fetch, mapping AI dei campi, credenziali cifrate. */
+listinoRouter.post("/api", async (req, res) => {
+  const { url, authType, headerName, secret } = req.body as {
+    url?: string;
+    authType?: string;
+    headerName?: string;
+    secret?: string;
+  };
+  const AUTH_TYPES = ["none", "apikey", "bearer", "basic"];
+  if (!url || !authType || !AUTH_TYPES.includes(authType)) {
+    res.status(400).json({ error: "Servono URL e tipo di autenticazione validi." });
+    return;
+  }
+  const config: ApiConnectorConfig = {
+    url: url.trim(),
+    authType: authType as ApiConnectorConfig["authType"],
+    headerName: headerName?.trim().slice(0, 80) || undefined,
+    secret: secret?.trim().slice(0, 500) || undefined,
+  };
+
+  try {
+    const items = await fetchApiItems(config);
+    if (items.length === 0) {
+      res.status(400).json({ error: "Nessun articolo con prezzo riconosciuto nella risposta API." });
+      return;
+    }
+    // source_ref = solo l'URL (mai le credenziali); la config completa va cifrata
+    upsertPriceList(req.userId!, "api", config.url.slice(0, 300), items, config);
+    res.json(stateResponse(req.userId!));
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Errore nel collegamento dell'API" });
   }
 });
 

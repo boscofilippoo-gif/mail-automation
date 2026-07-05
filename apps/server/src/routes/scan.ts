@@ -12,14 +12,17 @@ import { classifyEmail, CONFIDENCE_THRESHOLD } from "../ai/classify.js";
 import { getAuthedClientForUser } from "../auth/google.js";
 import { hydrateMessage } from "../gmail/scan.js";
 import {
-  accumulateRangeRun,
+  createScanRun,
+  getOrCreateRangeRun,
   getPriceList,
   getProcessed,
+  getScanRun,
   getUserSettings,
-  insertScanRun,
   listKeywords,
+  listProcessedByRun,
   listScanRuns,
   recordProcessed,
+  updateScanRunCounters,
 } from "../repo.js";
 
 export const scanRouter = Router();
@@ -31,11 +34,22 @@ scanRouter.get("/history", (req, res) => {
   res.json(listScanRuns(req.userId!));
 });
 
+/** Mail elaborate in un run specifico (dettaglio apribile dello storico). */
+scanRouter.get("/history/:id/mails", (req, res) => {
+  const run = getScanRun(req.userId!, Number(req.params.id));
+  if (!run) {
+    res.status(404).json({ error: "Scansione non trovata" });
+    return;
+  }
+  res.json(listProcessedByRun(req.userId!, run.id));
+});
+
 /** Trigger manuale ("Scansiona ora"): ultimi 15 giorni, budget 50 classificazioni. */
 scanRouter.post("/", async (req, res) => {
   try {
-    const result = await scanUser(req.userId!, MANUAL_SCAN_OPTS);
-    insertScanRun(req.userId!, "manuale", null, result);
+    const runId = createScanRun(req.userId!, "manuale", null);
+    const result = await scanUser(req.userId!, MANUAL_SCAN_OPTS, runId);
+    updateScanRunCounters(runId, result);
     res.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -74,9 +88,10 @@ scanRouter.post("/range", async (req, res) => {
       res.json({ toAnalyze: await countUnprocessed(req.userId!, window) });
       return;
     }
-    const result = await scanUser(req.userId!, { window, classifyBudget: RANGE_BATCH_BUDGET });
-    // i lotti dello stesso periodo si accumulano in un'unica riga di storico
-    accumulateRangeRun(req.userId!, `${from} → ${to}`, result);
+    // i lotti dello stesso periodo condividono un'unica riga di storico
+    const runId = getOrCreateRangeRun(req.userId!, `${from} → ${to}`);
+    const result = await scanUser(req.userId!, { window, classifyBudget: RANGE_BATCH_BUDGET }, runId);
+    updateScanRunCounters(runId, result);
     res.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

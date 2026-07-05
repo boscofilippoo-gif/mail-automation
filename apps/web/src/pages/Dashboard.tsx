@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   Download,
+  ExternalLink,
   Eye,
   FileText,
   Loader2,
@@ -15,7 +16,7 @@ import {
   Square,
 } from "lucide-react";
 
-import { api, type DocumentItem, type ProcessedItem, type ScanResult, type ScanRun, type SentStatus } from "@/api";
+import { api, gmailUrl, type DocumentItem, type ProcessedItem, type ScanResult, type ScanRun, type SentStatus } from "@/api";
 import { cn } from "@/lib/utils";
 
 const RUN_KIND_LABEL: Record<ScanRun["kind"], string> = {
@@ -292,7 +293,7 @@ export function Dashboard() {
       )}
 
       {/* Storico scansioni */}
-      <ScanHistory history={history} />
+      <ScanHistory history={history} onChanged={reload} />
 
       {/* Documenti */}
       {docs.length === 0 ? (
@@ -324,7 +325,7 @@ export function Dashboard() {
 
 /* ───────────────── Storico scansioni ───────────────── */
 
-function ScanHistory({ history }: { history: ScanRun[] }) {
+function ScanHistory({ history, onChanged }: { history: ScanRun[]; onChanged: () => void }) {
   const [open, setOpen] = useState(true);
 
   return (
@@ -345,34 +346,92 @@ function ScanHistory({ history }: { history: ScanRun[] }) {
             </p>
           )}
           {history.map((r, i) => (
-            <div
-              key={r.id}
-              className={cn(
-                "flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-sm",
-                i > 0 && "border-t border-border",
-              )}
-            >
-              <span className="shrink-0 rounded-full px-2.5 py-0.5 text-xs" style={{ background: RUN_KIND_BG[r.kind] }}>
-                {RUN_KIND_LABEL[r.kind]}
-              </span>
-              {r.label && <span className="shrink-0 font-mono text-xs text-muted-foreground/70">{r.label}</span>}
-              <span className="shrink-0 font-mono text-xs text-muted-foreground/70">
-                {new Date(r.run_at + "Z").toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-              </span>
-              <span className="ml-auto text-muted-foreground">
-                <strong className={cn(r.created > 0 && "text-foreground")}>{r.created} documenti</strong>
-                {" · "}{r.classified} analizzate · {r.skipped_irrelevant} ignorate
-                {r.errors > 0 ? (
-                  <>
-                    {" · "}
-                    <span style={{ color: "var(--rosa)" }}>{r.errors} errori</span>
-                  </>
-                ) : (
-                  " · 0 errori"
-                )}
-              </span>
-            </div>
+            <ScanRunRow key={r.id} run={r} first={i === 0} onChanged={onChanged} />
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Riga di run apribile: al click carica e mostra le mail elaborate in quel run. */
+function ScanRunRow({ run, first, onChanged }: { run: ScanRun; first: boolean; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [mails, setMails] = useState<ProcessedItem[] | null>(null);
+  const [state, setState] = useState<"idle" | "loading" | "error">("idle");
+
+  async function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next && mails === null && state !== "loading") {
+      setState("loading");
+      try {
+        setMails(await api.listRunMails(run.id));
+        setState("idle");
+      } catch {
+        setState("error");
+      }
+    }
+  }
+
+  /** Dopo un Riprova dentro il run: ricarica sia il dettaglio che il resto della dashboard. */
+  async function handleChanged() {
+    onChanged();
+    try {
+      setMails(await api.listRunMails(run.id));
+    } catch {
+      /* il dettaglio resta com'era */
+    }
+  }
+
+  return (
+    <div className={cn(!first && "border-t border-border")}>
+      <button
+        onClick={toggle}
+        className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-left text-sm transition-colors hover:bg-foreground/[0.03]"
+      >
+        <span className="shrink-0 rounded-full px-2.5 py-0.5 text-xs" style={{ background: RUN_KIND_BG[run.kind] }}>
+          {RUN_KIND_LABEL[run.kind]}
+        </span>
+        {run.label && <span className="shrink-0 font-mono text-xs text-muted-foreground/70">{run.label}</span>}
+        <span className="shrink-0 font-mono text-xs text-muted-foreground/70">
+          {new Date(run.run_at + "Z").toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+        </span>
+        <span className="ml-auto text-muted-foreground">
+          <strong className={cn(run.created > 0 && "text-foreground")}>{run.created} documenti</strong>
+          {" · "}{run.classified} analizzate · {run.skipped_irrelevant} ignorate
+          {run.errors > 0 ? (
+            <>
+              {" · "}
+              <span style={{ color: "var(--rosa)" }}>{run.errors} errori</span>
+            </>
+          ) : (
+            " · 0 errori"
+          )}
+        </span>
+        <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="border-t border-border/50 bg-foreground/[0.02]">
+          {state === "loading" && <p className="px-4 py-3 text-sm text-muted-foreground">Caricamento…</p>}
+          {state === "error" && (
+            <p className="px-4 py-3 text-sm" style={{ color: "var(--rosa)" }}>Errore nel caricamento del dettaglio.</p>
+          )}
+          {mails !== null && mails.length === 0 && (
+            <p className="px-4 py-3 text-sm text-muted-foreground">
+              {run.classified + run.created + run.errors > 0
+                ? "Dettaglio non disponibile per le scansioni precedenti all'aggiornamento."
+                : "Nessuna mail elaborata in questa scansione."}
+            </p>
+          )}
+          {mails !== null && mails.length > 0 && (
+            <div className="mx-3 my-2 overflow-hidden rounded-lg border border-border/60">
+              {mails.map((p, i) => (
+                <ProcessedRow key={p.id} p={p} first={i === 0} onChanged={handleChanged} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -494,8 +553,17 @@ function ProcessedRow({ p, first, onChanged }: { p: ProcessedItem; first: boolea
           )}
           {p.status === "done" && p.detail && <p className="mt-2 text-muted-foreground">{p.detail}</p>}
 
-          {(p.status === "skipped" || p.status === "error") && (
-            <div className="mt-3 flex items-center gap-3">
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <a
+              href={gmailUrl(p.gmail_message_id)}
+              target="_blank"
+              rel="noopener"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-xs transition-colors hover:border-accent"
+            >
+              <ExternalLink className="size-3.5" />
+              Apri in Gmail
+            </a>
+            {(p.status === "skipped" || p.status === "error") && (
               <button
                 onClick={retry}
                 disabled={retrying}
@@ -504,9 +572,9 @@ function ProcessedRow({ p, first, onChanged }: { p: ProcessedItem; first: boolea
                 {retrying ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />}
                 {retrying ? "Rianalizzo…" : "Riprova"}
               </button>
-              {retryMsg && <span className="text-xs text-muted-foreground">{retryMsg}</span>}
-            </div>
-          )}
+            )}
+            {retryMsg && <span className="text-xs text-muted-foreground">{retryMsg}</span>}
+          </div>
         </div>
       )}
     </div>
@@ -568,8 +636,17 @@ function DocCard({
             {STATUS_LABEL[doc.sentStatus]}
           </span>
         </div>
-        <span className="font-mono text-xs text-muted-foreground/70">
+        <span className="inline-flex items-center gap-2 font-mono text-xs text-muted-foreground/70">
           {new Date(doc.createdAt + "Z").toLocaleDateString("it-IT")}
+          <a
+            href={gmailUrl(doc.sourceMessageId)}
+            target="_blank"
+            rel="noopener"
+            title="Apri la mail originale in Gmail"
+            className="transition-colors hover:text-foreground"
+          >
+            <ExternalLink className="size-3.5" />
+          </a>
         </span>
       </div>
       <h3 className="mt-4 truncate text-lg font-semibold">{d.customer_name || "Cliente non rilevato"}</h3>

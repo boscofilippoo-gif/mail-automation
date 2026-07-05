@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FileSpreadsheet, FileText, Link2, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { FileSpreadsheet, FileText, Link2, Loader2, Plug, RefreshCw, Trash2 } from "lucide-react";
 
 import { api, type ListinoResult, type ListinoState } from "@/api";
 
@@ -7,7 +7,15 @@ const SOURCE_LABEL: Record<string, string> = {
   sheet: "Google Sheet",
   pdf: "PDF",
   csv: "CSV",
+  api: "API",
 };
+
+const AUTH_OPTIONS = [
+  { value: "none", label: "Nessuna autenticazione" },
+  { value: "apikey", label: "API key (header)" },
+  { value: "bearer", label: "Token Bearer" },
+  { value: "basic", label: "Utente e password (Basic)" },
+];
 
 /** Legge un file come base64 (senza prefisso data URL). */
 function fileToBase64(file: File): Promise<string> {
@@ -25,6 +33,10 @@ function fileToBase64(file: File): Promise<string> {
 export function Listino() {
   const [state, setState] = useState<ListinoState | null>(null);
   const [sheetUrl, setSheetUrl] = useState("");
+  const [apiUrl, setApiUrl] = useState("");
+  const [authType, setAuthType] = useState("apikey");
+  const [headerName, setHeaderName] = useState("X-Api-Key");
+  const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState<string | null>(null); // 'connect' | 'sync' | 'upload' | 'delete'
   const [error, setError] = useState<string | null>(null);
   const [needsReauth, setNeedsReauth] = useState(false);
@@ -117,6 +129,8 @@ export function Listino() {
             <div className="flex items-center gap-4">
               {state.source_type === "sheet" ? (
                 <FileSpreadsheet className="size-6" style={{ color: "var(--azzurro)" }} />
+              ) : state.source_type === "api" ? (
+                <Plug className="size-6" style={{ color: "var(--azzurro)" }} />
               ) : (
                 <FileText className="size-6" style={{ color: "var(--azzurro)" }} />
               )}
@@ -133,7 +147,7 @@ export function Listino() {
               </div>
             </div>
             <div className="flex gap-2">
-              {state.source_type === "sheet" && (
+              {(state.source_type === "sheet" || state.source_type === "api") && (
                 <button
                   onClick={() => run("sync", () => api.syncListino())}
                   disabled={busy !== null}
@@ -222,6 +236,62 @@ export function Listino() {
               {busy === "upload" ? "Elaborazione in corso…" : "Scegli file (PDF o CSV)"}
             </button>
             <input ref={fileRef} type="file" accept=".pdf,.csv,application/pdf,text/csv" onChange={onFile} className="hidden" />
+          </div>
+
+          {/* Connettore API */}
+          <div className="rounded-2xl border border-border bg-card p-6 md:col-span-2">
+            <Plug className="size-6" style={{ color: "var(--azzurro)" }} />
+            <h2 className="mt-4 font-semibold">Collega un'API</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              Il listino sta nel tuo gestionale o su un sito protetto? Se espone un'API REST che
+              risponde in JSON, collegala qui: i campi (descrizione, prezzo, codice…) li riconosce
+              l'AI da sola. Le credenziali sono salvate cifrate e non lasciano mai il server.
+            </p>
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <input
+                value={apiUrl}
+                onChange={(e) => setApiUrl(e.target.value)}
+                placeholder="https://api.tuogestionale.it/prodotti"
+                className="rounded-xl border border-border bg-background px-3.5 py-2 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-accent sm:col-span-2"
+              />
+              <select
+                value={authType}
+                onChange={(e) => setAuthType(e.target.value)}
+                className="rounded-xl border border-border bg-background px-3.5 py-2 text-sm outline-none focus:border-accent"
+              >
+                {AUTH_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value} className="bg-background">
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {authType === "apikey" && (
+                <input
+                  value={headerName}
+                  onChange={(e) => setHeaderName(e.target.value)}
+                  placeholder="Nome header (es. X-Api-Key)"
+                  className="rounded-xl border border-border bg-background px-3.5 py-2 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-accent"
+                />
+              )}
+              {authType !== "none" && (
+                <input
+                  type="password"
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                  placeholder={authType === "basic" ? "utente:password" : authType === "bearer" ? "Token" : "Chiave API"}
+                  className={authType === "apikey" ? "rounded-xl border border-border bg-background px-3.5 py-2 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-accent sm:col-span-2" : "rounded-xl border border-border bg-background px-3.5 py-2 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-accent"}
+                />
+              )}
+            </div>
+            <button
+              onClick={() => run("connect-api", () => api.connectApi({ url: apiUrl, authType, headerName, secret }))}
+              disabled={busy !== null || !apiUrl.trim() || (authType !== "none" && !secret.trim())}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium disabled:opacity-50"
+              style={{ background: "var(--azzurro)", color: "var(--nero)" }}
+            >
+              {busy === "connect-api" ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}
+              {busy === "connect-api" ? "Collego e analizzo…" : "Collega API"}
+            </button>
           </div>
         </div>
       )}

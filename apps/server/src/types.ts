@@ -33,6 +33,7 @@ export interface Processed {
   processed_at: string;
   category: string | null; // categoria della classificazione AI (null per righe pre-feature)
   detail: string | null; // motivo in una frase, per l'utente
+  scan_run_id: number | null; // run che ha elaborato la mail (null per righe pre-feature)
 }
 
 /** Origine di un'esecuzione di scan registrata nello storico. */
@@ -128,7 +129,15 @@ export interface PriceListItem {
   unit_price: number;
 }
 
-export type PriceListSource = "sheet" | "pdf" | "csv";
+export type PriceListSource = "sheet" | "pdf" | "csv" | "api";
+
+/** Configurazione del connettore API listino (salvata CIFRATA, mai inviata al client). */
+export interface ApiConnectorConfig {
+  url: string;
+  authType: "none" | "apikey" | "bearer" | "basic";
+  headerName?: string; // per apikey: nome dell'header (es. X-Api-Key)
+  secret?: string; // apikey/bearer: il token; basic: "utente:password"
+}
 
 export interface PriceListMeta {
   source_type: PriceListSource;

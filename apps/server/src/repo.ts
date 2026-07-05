@@ -2,6 +2,7 @@ import { db } from "./db.js";
 import { encrypt, decrypt } from "./crypto.js";
 import {
   DEFAULT_SETTINGS,
+  type ApiConnectorConfig,
   type DocType,
   type DocumentRecord,
   type Keyword,
@@ -133,16 +134,18 @@ export function recordProcessed(p: {
   error: string | null;
   category?: string | null;
   detail?: string | null;
+  scanRunId?: number | null;
 }): void {
   db.prepare(
     `INSERT INTO processed
-       (user_id, gmail_message_id, subject, matched_keyword, status, document_id, error, category, detail)
-     VALUES (@userId, @gmailMessageId, @subject, @matchedKeyword, @status, @documentId, @error, @category, @detail)
+       (user_id, gmail_message_id, subject, matched_keyword, status, document_id, error, category, detail, scan_run_id)
+     VALUES (@userId, @gmailMessageId, @subject, @matchedKeyword, @status, @documentId, @error, @category, @detail, @scanRunId)
      ON CONFLICT(user_id, gmail_message_id) DO UPDATE SET
        status = @status, document_id = @documentId, error = @error,
        category = @category, detail = @detail, matched_keyword = @matchedKeyword,
+       scan_run_id = COALESCE(@scanRunId, scan_run_id),  -- il Riprova conserva il run originale
        processed_at = datetime('now')`,
-  ).run({ category: null, detail: null, ...p });
+  ).run({ category: null, detail: null, scanRunId: null, ...p });
 }
 
 /** Riga processed singola (per il Riprova). */
@@ -249,21 +252,33 @@ export function upsertPriceList(
   sourceType: PriceListSource,
   sourceRef: string,
   items: PriceListItem[],
+  apiConfig?: ApiConnectorConfig,
 ): PriceListMeta {
   db.prepare(
-    `INSERT INTO price_lists (user_id, source_type, source_ref, items_json, item_count, synced_at)
-     VALUES (@user_id, @source_type, @source_ref, @items_json, @item_count, datetime('now'))
+    `INSERT INTO price_lists (user_id, source_type, source_ref, items_json, item_count, api_config_enc, synced_at)
+     VALUES (@user_id, @source_type, @source_ref, @items_json, @item_count, @api_config_enc, datetime('now'))
      ON CONFLICT(user_id) DO UPDATE SET
        source_type = @source_type, source_ref = @source_ref, items_json = @items_json,
-       item_count = @item_count, synced_at = datetime('now')`,
+       item_count = @item_count, api_config_enc = @api_config_enc, synced_at = datetime('now')`,
   ).run({
     user_id: userId,
     source_type: sourceType,
     source_ref: sourceRef,
     items_json: JSON.stringify(items),
     item_count: items.length,
+    // cifrata a riposo con lo stesso AES-GCM dei token OAuth; null per le altre fonti
+    api_config_enc: apiConfig ? encrypt(JSON.stringify(apiConfig)) : null,
   });
   return getPriceList(userId)!.meta;
+}
+
+/** Config del connettore API (decifrata), null se la fonte non è 'api'. */
+export function getPriceListApiConfig(userId: number): ApiConnectorConfig | null {
+  const row = db
+    .prepare(`SELECT api_config_enc FROM price_lists WHERE user_id = ?`)
+    .get(userId) as { api_config_enc: string | null } | undefined;
+  if (!row?.api_config_enc) return null;
+  return JSON.parse(decrypt(row.api_config_enc)) as ApiConnectorConfig;
 }
 
 export function deletePriceList(userId: number): void {
@@ -340,26 +355,39 @@ function pruneScanRuns(userId: number): void {
   ).run(userId, userId, SCAN_RUNS_KEEP);
 }
 
-export function insertScanRun(
-  userId: number,
-  kind: ScanRunKind,
-  label: string | null,
-  r: ScanCounters,
-): void {
-  db.prepare(
-    `INSERT INTO scan_runs
-       (user_id, kind, label, created, errors, skipped, classified, skipped_irrelevant, drafts_created)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(userId, kind, label, r.created, r.errors, r.skipped, r.classified, r.skippedIrrelevant, r.draftsCreated);
+/**
+ * Crea la riga di run PRIMA dello scan (contatori a zero): così le mail
+ * processate possono riferirla via processed.scan_run_id. Ritorna l'id.
+ */
+export function createScanRun(userId: number, kind: ScanRunKind, label: string | null): number {
+  const info = db
+    .prepare(
+      `INSERT INTO scan_runs
+         (user_id, kind, label, created, errors, skipped, classified, skipped_irrelevant, drafts_created)
+       VALUES (?, ?, ?, 0, 0, 0, 0, 0, 0)`,
+    )
+    .run(userId, kind, label);
   pruneScanRuns(userId);
+  return Number(info.lastInsertRowid);
+}
+
+/** Somma i contatori di un lotto alla riga di run (additivo: usato anche dai lotti range). */
+export function updateScanRunCounters(runId: number, r: ScanCounters): void {
+  db.prepare(
+    `UPDATE scan_runs SET
+       created = created + ?, errors = errors + ?, skipped = skipped + ?,
+       classified = classified + ?, skipped_irrelevant = skipped_irrelevant + ?,
+       drafts_created = drafts_created + ?, run_at = datetime('now')
+     WHERE id = ?`,
+  ).run(r.created, r.errors, r.skipped, r.classified, r.skippedIrrelevant, r.draftsCreated, runId);
 }
 
 /**
- * Storico per lo scan a periodo: i lotti del loop client vengono accumulati
- * in UNA riga — se l'ultima riga dell'utente è 'periodo' con la stessa label
- * ed è più recente di 15 minuti, somma i contatori; altrimenti nuova riga.
+ * Storico per lo scan a periodo: i lotti del loop client condividono UNA riga —
+ * se l'ultima riga dell'utente è 'periodo' con la stessa label ed è più recente
+ * di 15 minuti, la riusa; altrimenti ne crea una nuova. Ritorna l'id.
  */
-export function accumulateRangeRun(userId: number, label: string, r: ScanCounters): void {
+export function getOrCreateRangeRun(userId: number, label: string): number {
   const last = db
     .prepare(`SELECT * FROM scan_runs WHERE user_id = ? ORDER BY id DESC LIMIT 1`)
     .get(userId) as ScanRun | undefined;
@@ -370,17 +398,21 @@ export function accumulateRangeRun(userId: number, label: string, r: ScanCounter
     last.label === label &&
     Date.now() - new Date(last.run_at + "Z").getTime() < 15 * 60 * 1000;
 
-  if (isRecentSameRange) {
-    db.prepare(
-      `UPDATE scan_runs SET
-         created = created + ?, errors = errors + ?, skipped = skipped + ?,
-         classified = classified + ?, skipped_irrelevant = skipped_irrelevant + ?,
-         drafts_created = drafts_created + ?, run_at = datetime('now')
-       WHERE id = ?`,
-    ).run(r.created, r.errors, r.skipped, r.classified, r.skippedIrrelevant, r.draftsCreated, last.id);
-  } else {
-    insertScanRun(userId, "periodo", label, r);
-  }
+  return isRecentSameRange ? last.id : createScanRun(userId, "periodo", label);
+}
+
+/** Mail elaborate in un run specifico (per il dettaglio apribile dello storico). */
+export function listProcessedByRun(userId: number, runId: number): Processed[] {
+  return db
+    .prepare(`SELECT * FROM processed WHERE user_id = ? AND scan_run_id = ? ORDER BY processed_at DESC`)
+    .all(userId, runId) as Processed[];
+}
+
+/** Riga di run singola (guardia di appartenenza per il dettaglio). */
+export function getScanRun(userId: number, runId: number): ScanRun | undefined {
+  return db
+    .prepare(`SELECT * FROM scan_runs WHERE id = ? AND user_id = ?`)
+    .get(runId, userId) as ScanRun | undefined;
 }
 
 export function listScanRuns(userId: number, limit = 20): ScanRun[] {
