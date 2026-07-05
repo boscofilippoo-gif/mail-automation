@@ -11,6 +11,7 @@ import {
   searchMessages,
   smartScanQuery,
   type CandidateMail,
+  type ScanWindow,
 } from "../gmail/scan.js";
 import {
   getPriceList,
@@ -24,7 +25,7 @@ import {
   touchSync,
   updateDocumentStatus,
 } from "../repo.js";
-import type { DocType } from "../types.js";
+import type { DocType, PriceListItem, UserSettings } from "../types.js";
 
 export interface ScanResult {
   scanned: number; // mail elaborate (estrazione tentata) in questo run
@@ -34,28 +35,133 @@ export interface ScanResult {
   classified: number; // mail passate dal classificatore AI in questo run
   skippedIrrelevant: number; // classificate come non pertinenti (registrate, mai più riviste)
   draftsCreated: number; // bozze di risposta create automaticamente (se auto_draft attivo)
+  remaining: number; // mail nuove ancora da analizzare nella finestra dopo questo lotto
 }
 
 /**
- * Finestre e budget differenziati (controllo costi, richiesta esplicita):
- * - scan MANUALE: guarda indietro 15 giorni, max 50 classificazioni per click.
- *   Un secondo click continua da dove il primo si è fermato (le già viste costano zero).
- * - scan GIORNALIERO: target "il giorno prima"; finestra 2gg come margine
- *   anti-outage (Render free può dormire) — gratis grazie al dedup.
- *
- * Garanzia di costo: ogni mail è classificata AL MASSIMO UNA VOLTA nella vita.
- * Ogni esito (done/skipped/error-estrazione) finisce in `processed`; ai run
- * successivi il filtro sugli ID la scarta prima di scaricare o classificare.
+ * Finestre e budget differenziati (controllo costi):
+ * - scan MANUALE: ultimi 15 giorni, max 50 classificazioni per click.
+ * - scan GIORNALIERO: "il giorno prima" + margine anti-outage (2gg, gratis col dedup).
+ * - scan PER PERIODO: intervallo scelto dall'utente, a lotti da 50 per richiesta
+ *   (il frontend concatena i lotti finché remaining > 0).
+ * Garanzia: ogni mail è classificata AL MASSIMO UNA VOLTA nella vita.
  */
 export interface ScanOptions {
-  windowDays: number;
+  window: ScanWindow;
   classifyBudget: number;
 }
-export const MANUAL_SCAN_OPTS: ScanOptions = { windowDays: 15, classifyBudget: 50 };
-export const DAILY_SCAN_OPTS: ScanOptions = { windowDays: 2, classifyBudget: 40 };
+export const MANUAL_SCAN_OPTS: ScanOptions = { window: { days: 15 }, classifyBudget: 50 };
+export const DAILY_SCAN_OPTS: ScanOptions = { window: { days: 2 }, classifyBudget: 40 };
+export const RANGE_BATCH_BUDGET = 50;
 
-/** Quante mail al massimo listare da Gmail per lo smart scan (solo ID, economico). */
-const SMART_LIST_MAX = 100;
+/** Quanti ID al massimo listare da Gmail per lo smart scan (solo ID, economico). */
+const SMART_LIST_MAX = 2000;
+
+export type SingleMailOutcome =
+  | { ok: true; documentId: number; draftCreated: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Elabora UNA mail rilevante: estrazione → PDF → persistenza (+ bozza automatica
+ * se attiva). Registra da sola l'esito in `processed`, con errori di FASE espliciti.
+ * Riusata dallo scan e dal "Riprova".
+ */
+export async function processSingleMail(args: {
+  userId: number;
+  client: ReturnType<typeof getAuthedClientForUser>;
+  mail: CandidateMail;
+  docType: DocType;
+  matchedKeyword: string;
+  settings: UserSettings;
+  listino: PriceListItem[] | undefined;
+  category?: string | null;
+  detail?: string | null;
+}): Promise<SingleMailOutcome> {
+  const { userId, client, mail, docType, matchedKeyword, settings, listino } = args;
+  const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+  try {
+    let extracted;
+    try {
+      extracted = await extractDocument(mail.bodyText || mail.subject, docType, listino);
+    } catch (e) {
+      throw new Error(`Estrazione dati fallita: ${msg(e)}`);
+    }
+
+    let pdfPath: string;
+    try {
+      pdfPath = await generatePdf(extracted, settings);
+    } catch (e) {
+      throw new Error(`Generazione PDF fallita: ${msg(e)}`);
+    }
+
+    const docRecord = insertDocument({
+      userId,
+      type: docType,
+      extractedJson: JSON.stringify(extracted),
+      pdfPath,
+      sourceMessageId: mail.id,
+    });
+    recordProcessed({
+      userId,
+      gmailMessageId: mail.id,
+      subject: mail.subject,
+      matchedKeyword,
+      status: "done",
+      documentId: docRecord.id,
+      error: null,
+      category: args.category ?? null,
+      detail: args.detail ?? null,
+    });
+
+    // ── bozza automatica (opzionale): fallimento tollerato, il documento esiste ──
+    let draftCreated = false;
+    if (settings.auto_draft && hasScope(userId, DRAFTS_SCOPE)) {
+      try {
+        const meta = await fetchReplyMeta(client, mail.id);
+        let body = await generateReplyBody({
+          customerName: extracted.customer_name,
+          docType,
+          docNumber: extracted.document_number,
+          total: extracted.total,
+          currency: extracted.currency,
+          itemCount: extracted.line_items.length,
+          missingPriceCount: extracted.line_items.filter((li) => li.unit_price === null).length,
+          originalSnippet: mail.bodyText || mail.subject,
+        });
+        const signature = settings.email_signature ?? settings.company_name;
+        if (signature) body += `\n\n${signature}`;
+        const draftId = await createReplyDraft(client, {
+          meta,
+          bodyText: body,
+          pdfPath,
+          filename: `${docType}-${docRecord.id}.pdf`,
+        });
+        updateDocumentStatus(userId, docRecord.id, "bozza", draftId);
+        draftCreated = true;
+      } catch (err) {
+        console.error(`[scan] bozza automatica fallita per doc ${docRecord.id}:`, err);
+      }
+    }
+
+    return { ok: true, documentId: docRecord.id, draftCreated };
+  } catch (err) {
+    const message = msg(err);
+    console.error(`[scan] errore elaborazione mail ${mail.id} (user ${userId}):`, message);
+    recordProcessed({
+      userId,
+      gmailMessageId: mail.id,
+      subject: mail.subject,
+      matchedKeyword,
+      status: "error",
+      documentId: null,
+      error: message,
+      category: args.category ?? null,
+      detail: args.detail ?? null,
+    });
+    return { ok: false, error: message };
+  }
+}
 
 /**
  * Scan completo per un utente, in due fasi:
@@ -72,6 +178,7 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
     classified: 0,
     skippedIrrelevant: 0,
     draftsCreated: 0,
+    remaining: 0,
   };
   const settings = getUserSettings(userId);
   const keywords = listActiveKeywords(userId);
@@ -85,71 +192,12 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
 
   const client = getAuthedClientForUser(userId);
 
-  /** Estrae, genera il PDF e persiste una mail. matchedKeyword='auto' = rilevata dall'AI. */
-  const processMail = async (mail: CandidateMail, docType: DocType, matchedKeyword: string) => {
-    try {
-      const extracted = await extractDocument(mail.bodyText || mail.subject, docType, listino?.items);
-      const pdfPath = await generatePdf(extracted, settings);
-      const docRecord = insertDocument({
-        userId,
-        type: docType,
-        extractedJson: JSON.stringify(extracted),
-        pdfPath,
-        sourceMessageId: mail.id,
-      });
-      recordProcessed({
-        userId,
-        gmailMessageId: mail.id,
-        subject: mail.subject,
-        matchedKeyword,
-        status: "done",
-        documentId: docRecord.id,
-        error: null,
-      });
-      result.scanned++;
+  const applyOutcome = (o: SingleMailOutcome) => {
+    result.scanned++;
+    if (o.ok) {
       result.created++;
-
-      // ── bozza automatica (opzionale): fallimento tollerato, il documento esiste comunque ──
-      if (settings.auto_draft && hasScope(userId, DRAFTS_SCOPE)) {
-        try {
-          const meta = await fetchReplyMeta(client, mail.id);
-          let body = await generateReplyBody({
-            customerName: extracted.customer_name,
-            docType,
-            docNumber: extracted.document_number,
-            total: extracted.total,
-            currency: extracted.currency,
-            itemCount: extracted.line_items.length,
-            missingPriceCount: extracted.line_items.filter((li) => li.unit_price === null).length,
-            originalSnippet: mail.bodyText || mail.subject,
-          });
-          const signature = settings.email_signature ?? settings.company_name;
-          if (signature) body += `\n\n${signature}`;
-          const draftId = await createReplyDraft(client, {
-            meta,
-            bodyText: body,
-            pdfPath,
-            filename: `${docType}-${docRecord.id}.pdf`,
-          });
-          updateDocumentStatus(userId, docRecord.id, "bozza", draftId);
-          result.draftsCreated++;
-        } catch (err) {
-          console.error(`[scan] bozza automatica fallita per doc ${docRecord.id}:`, err);
-        }
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[scan] errore elaborazione mail ${mail.id} (user ${userId}):`, message);
-      recordProcessed({
-        userId,
-        gmailMessageId: mail.id,
-        subject: mail.subject,
-        matchedKeyword,
-        status: "error",
-        documentId: null,
-        error: message,
-      });
-      result.scanned++;
+      if (o.draftCreated) result.draftsCreated++;
+    } else {
       result.errors++;
     }
   };
@@ -158,7 +206,7 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
   for (const kw of keywords) {
     let candidates: CandidateMail[];
     try {
-      candidates = await searchMessages(client, kw.term, opts.windowDays);
+      candidates = await searchMessages(client, kw.term, opts.window);
     } catch (err) {
       console.error(`[scan] errore ricerca per keyword "${kw.term}" (user ${userId}):`, err);
       result.errors++;
@@ -169,7 +217,17 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
         result.skipped++;
         continue;
       }
-      await processMail(mail, kw.doc_type, kw.term);
+      applyOutcome(
+        await processSingleMail({
+          userId,
+          client,
+          mail,
+          docType: kw.doc_type,
+          matchedKeyword: kw.term,
+          settings,
+          listino: listino?.items,
+        }),
+      );
     }
   }
 
@@ -177,7 +235,7 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
   if (settings.smart_scan) {
     let ids: string[] = [];
     try {
-      ids = await listMessageIds(client, smartScanQuery(opts.windowDays), SMART_LIST_MAX);
+      ids = await listMessageIds(client, smartScanQuery(opts.window), SMART_LIST_MAX);
     } catch (err) {
       console.error(`[scan] errore lista inbox smart scan (user ${userId}):`, err);
       result.errors++;
@@ -190,9 +248,10 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
       return !seen;
     });
 
-    let budget = opts.classifyBudget;
+    let consumed = 0;
     for (const id of newIds) {
-      if (budget-- <= 0) break;
+      if (consumed >= opts.classifyBudget) break;
+      consumed++;
 
       let mail: CandidateMail;
       try {
@@ -216,9 +275,21 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
       }
 
       if (cls.relevant && cls.doc_type && cls.confidence >= CONFIDENCE_THRESHOLD) {
-        await processMail(mail, cls.doc_type, "auto");
+        applyOutcome(
+          await processSingleMail({
+            userId,
+            client,
+            mail,
+            docType: cls.doc_type,
+            matchedKeyword: "auto",
+            settings,
+            listino: listino?.items,
+            category: cls.category,
+            detail: cls.reason,
+          }),
+        );
       } else {
-        // registrata come non pertinente: mai più riclassificata (controllo costi)
+        // registrata come non pertinente CON motivo: mai più riclassificata
         recordProcessed({
           userId,
           gmailMessageId: mail.id,
@@ -227,14 +298,24 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
           status: "skipped",
           documentId: null,
           error: null,
+          category: cls.category,
+          detail: cls.reason,
         });
         result.skippedIrrelevant++;
       }
     }
+    result.remaining = Math.max(0, newIds.length - consumed);
   }
 
   touchSync(userId);
   return result;
+}
+
+/** Conteggio a secco: quante mail NUOVE ci sono in una finestra (zero AI, zero costo). */
+export async function countUnprocessed(userId: number, window: ScanWindow): Promise<number> {
+  const client = getAuthedClientForUser(userId);
+  const ids = await listMessageIds(client, smartScanQuery(window), SMART_LIST_MAX);
+  return ids.filter((id) => !isProcessed(userId, id)).length;
 }
 
 /** Scan di tutti gli utenti (usato dal cron giornaliero). */

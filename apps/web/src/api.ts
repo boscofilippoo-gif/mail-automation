@@ -114,6 +114,8 @@ export interface ProcessedItem {
   status: "done" | "error" | "skipped";
   error: string | null;
   processed_at: string;
+  category: string | null;
+  detail: string | null;
 }
 
 export interface ScanResult {
@@ -124,7 +126,13 @@ export interface ScanResult {
   classified: number;
   skippedIrrelevant: number;
   draftsCreated: number;
+  remaining: number;
 }
+
+export type RetryResult =
+  | { outcome: "done"; documentId: number }
+  | { outcome: "skipped"; category: string; reason: string }
+  | { outcome: "error"; error: string };
 
 export interface UserSettings {
   template_id: string;
@@ -156,6 +164,15 @@ export const api = {
   listDocuments: () => request<DocumentItem[]>("/api/documents"),
   listProcessed: () => request<ProcessedItem[]>("/api/documents/processed"),
   scanNow: () => request<ScanResult>("/api/scan", { method: "POST" }),
+  scanRangeCount: (from: string, to: string) =>
+    request<{ toAnalyze: number }>("/api/scan/range", {
+      method: "POST",
+      body: JSON.stringify({ from, to, dryRun: true }),
+    }),
+  scanRangeBatch: (from: string, to: string) =>
+    request<ScanResult>("/api/scan/range", { method: "POST", body: JSON.stringify({ from, to }) }),
+  retryProcessed: (id: number) =>
+    request<RetryResult>(`/api/scan/processed/${id}/retry`, { method: "POST" }),
 
   getSettings: () => request<UserSettings>("/api/settings"),
   saveSettings: (s: Partial<UserSettings>) =>

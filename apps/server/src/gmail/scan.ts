@@ -57,9 +57,25 @@ function header(headers: gmail_v1.Schema$MessagePartHeader[] | undefined, name: 
 }
 
 /**
- * Lista SOLO gli ID dei messaggi che matchano una query Gmail.
- * Economico: nessun contenuto scaricato. Permette di filtrare i già-processati
- * PRIMA di idratare (meno chiamate API, zero costo AI sulle mail già viste).
+ * Finestra temporale di uno scan: relativa (ultimi N giorni) o intervallo
+ * di date scelto dall'utente (YYYY-MM-DD, estremi inclusi).
+ */
+export type ScanWindow = { days: number } | { after: string; before: string };
+
+/** Frammento di query Gmail per la finestra. `before:` in Gmail è ESCLUSIVO → +1 giorno. */
+export function windowQuery(w: ScanWindow): string {
+  if ("days" in w) return `newer_than:${w.days}d`;
+  const beforeInclusive = new Date(`${w.before}T00:00:00Z`);
+  beforeInclusive.setUTCDate(beforeInclusive.getUTCDate() + 1);
+  const fmt = (d: Date) =>
+    `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCDate()).padStart(2, "0")}`;
+  return `after:${w.after.replace(/-/g, "/")} before:${fmt(beforeInclusive)}`;
+}
+
+/**
+ * Lista SOLO gli ID dei messaggi che matchano una query Gmail, con paginazione
+ * (fino a `maxResults` totali, 500 per pagina). Economico: nessun contenuto
+ * scaricato — permette di filtrare i già-processati PRIMA di idratare.
  */
 export async function listMessageIds(
   client: OAuth2Client,
@@ -67,8 +83,20 @@ export async function listMessageIds(
   maxResults: number,
 ): Promise<string[]> {
   const gmail = google.gmail({ version: "v1", auth: client });
-  const list = await gmail.users.messages.list({ userId: "me", q, maxResults });
-  return (list.data.messages ?? []).map((m) => m.id!).filter(Boolean);
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  while (ids.length < maxResults) {
+    const list = await gmail.users.messages.list({
+      userId: "me",
+      q,
+      maxResults: Math.min(500, maxResults - ids.length),
+      pageToken,
+    });
+    ids.push(...(list.data.messages ?? []).map((m) => m.id!).filter(Boolean));
+    pageToken = list.data.nextPageToken ?? undefined;
+    if (!pageToken) break;
+  }
+  return ids;
 }
 
 /** Scarica e normalizza UN messaggio (oggetto, mittente, corpo in testo). */
@@ -86,26 +114,25 @@ export async function hydrateMessage(client: OAuth2Client, id: string): Promise<
 }
 
 /**
- * Query dello smart scan: mail recenti dell'inbox, senza filtro sull'oggetto.
+ * Query dello smart scan: mail dell'inbox nella finestra, senza filtro oggetto.
  * NIENTE `-from:me`: le mail auto-inviate sono il percorso di test/demo
  * dell'utente (si manda una mail e prova lo scan) — non escluderle mai.
  */
-export function smartScanQuery(newerThanDays: number): string {
-  return `newer_than:${newerThanDays}d in:inbox -in:chats -category:promotions -category:social`;
+export function smartScanQuery(window: ScanWindow): string {
+  return `${windowQuery(window)} in:inbox -in:chats -category:promotions -category:social`;
 }
 
 /**
- * Cerca le mail recenti che matchano un termine nell'oggetto.
- * Query Gmail: `subject:(term) newer_than:Nd` — semplice e robusta per uno scan periodico.
+ * Cerca le mail che matchano un termine nell'oggetto, nella finestra data.
  * Ritorna i candidati completi (con testo del corpo) pronti per l'estrazione.
  */
 export async function searchMessages(
   client: OAuth2Client,
   term: string,
-  newerThanDays = 2,
+  window: ScanWindow = { days: 2 },
   maxResults = 25,
 ): Promise<CandidateMail[]> {
-  const ids = await listMessageIds(client, `subject:(${term}) newer_than:${newerThanDays}d`, maxResults);
+  const ids = await listMessageIds(client, `subject:(${term}) ${windowQuery(window)}`, maxResults);
   const out: CandidateMail[] = [];
   for (const id of ids) {
     out.push(await hydrateMessage(client, id));

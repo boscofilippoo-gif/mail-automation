@@ -5,10 +5,23 @@ import { DOC_TYPES, type DocType } from "../types.js";
 
 const client = new Anthropic({ apiKey: env.anthropic.apiKey });
 
+/** Categorie di classificazione (per spiegare all'utente il motivo dello scarto). */
+export const MAIL_CATEGORIES = [
+  "richiesta_commerciale",
+  "newsletter",
+  "notifica_automatica",
+  "spam_marketing",
+  "personale",
+  "altro",
+] as const;
+export type MailCategory = (typeof MAIL_CATEGORIES)[number];
+
 export interface ClassificationResult {
   relevant: boolean;
   doc_type: DocType | null;
   confidence: number; // 0..1
+  category: MailCategory;
+  reason: string; // una frase in italiano, per l'utente
 }
 
 /** Sotto questa confidenza la mail viene ignorata anche se marcata rilevante. */
@@ -31,14 +44,24 @@ const CLASSIFY_SCHEMA = {
       type: "number",
       description: "Confidenza della classificazione, da 0 a 1.",
     },
+    category: {
+      type: "string",
+      enum: ["richiesta_commerciale", "newsletter", "notifica_automatica", "spam_marketing", "personale", "altro"],
+      description: "Categoria dell'email. SEMPRE valorizzata, anche per le rilevanti (richiesta_commerciale).",
+    },
+    reason: {
+      type: "string",
+      description: "UNA frase in italiano che spiega all'utente la decisione (es. 'Newsletter promozionale di un negozio online').",
+    },
   },
-  required: ["relevant", "doc_type", "confidence"],
+  required: ["relevant", "doc_type", "confidence", "category", "reason"],
   additionalProperties: false,
 } as const;
 
 const SYSTEM_PROMPT = `Sei un filtro per email aziendali italiane. Decidi se un'email è una comunicazione commerciale da cui generare un documento (preventivo, ordine, fattura).
 NON sono rilevanti: newsletter, notifiche automatiche di servizi, marketing, spam, conversazioni personali, conferme di registrazione, fatture GIÀ emesse da fornitori terzi verso l'utente.
 Sono rilevanti: un cliente che chiede un preventivo, un ordine con prodotti e quantità, una richiesta di fatturazione con dati concreti.
+Compila SEMPRE 'category' e 'reason': il motivo è mostrato all'utente, scrivilo chiaro e specifico.
 Usa SEMPRE il tool 'classify_email'. Nel dubbio, marca come non rilevante con confidenza bassa.`;
 
 /**
@@ -75,12 +98,23 @@ export async function classifyEmail(mail: {
     throw new Error("Classificazione non riuscita: nessun output strutturato.");
   }
 
-  const raw = toolUse.input as { relevant?: boolean; doc_type?: string | null; confidence?: number };
+  const raw = toolUse.input as {
+    relevant?: boolean;
+    doc_type?: string | null;
+    confidence?: number;
+    category?: string;
+    reason?: string;
+  };
   const docType = DOC_TYPES.includes(raw.doc_type as DocType) ? (raw.doc_type as DocType) : null;
   const confidence = Math.min(Math.max(Number(raw.confidence ?? 0), 0), 1);
+  const category = MAIL_CATEGORIES.includes(raw.category as MailCategory)
+    ? (raw.category as MailCategory)
+    : "altro";
   return {
     relevant: Boolean(raw.relevant) && docType !== null,
     doc_type: docType,
     confidence,
+    category,
+    reason: String(raw.reason ?? "").trim().slice(0, 200),
   };
 }

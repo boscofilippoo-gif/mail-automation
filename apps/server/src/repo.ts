@@ -129,15 +129,25 @@ export function recordProcessed(p: {
   status: ProcessedStatus;
   documentId: number | null;
   error: string | null;
+  category?: string | null;
+  detail?: string | null;
 }): void {
   db.prepare(
     `INSERT INTO processed
-       (user_id, gmail_message_id, subject, matched_keyword, status, document_id, error)
-     VALUES (@userId, @gmailMessageId, @subject, @matchedKeyword, @status, @documentId, @error)
+       (user_id, gmail_message_id, subject, matched_keyword, status, document_id, error, category, detail)
+     VALUES (@userId, @gmailMessageId, @subject, @matchedKeyword, @status, @documentId, @error, @category, @detail)
      ON CONFLICT(user_id, gmail_message_id) DO UPDATE SET
        status = @status, document_id = @documentId, error = @error,
+       category = @category, detail = @detail, matched_keyword = @matchedKeyword,
        processed_at = datetime('now')`,
-  ).run(p);
+  ).run({ category: null, detail: null, ...p });
+}
+
+/** Riga processed singola (per il Riprova). */
+export function getProcessed(userId: number, id: number): Processed | undefined {
+  return db
+    .prepare(`SELECT * FROM processed WHERE id = ? AND user_id = ?`)
+    .get(id, userId) as Processed | undefined;
 }
 
 export function listProcessed(userId: number, limit = 50): Processed[] {

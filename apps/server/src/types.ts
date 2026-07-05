@@ -31,6 +31,8 @@ export interface Processed {
   document_id: number | null;
   error: string | null;
   processed_at: string;
+  category: string | null; // categoria della classificazione AI (null per righe pre-feature)
+  detail: string | null; // motivo in una frase, per l'utente
 }
 
 /** Stato di invio di un documento generato. */

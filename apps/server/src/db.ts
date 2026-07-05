@@ -113,6 +113,8 @@ export function migrate(): void {
   ensureColumn("user_settings", "auto_draft", "auto_draft INTEGER NOT NULL DEFAULT 0");
   ensureColumn("documents", "sent_status", "sent_status TEXT NOT NULL DEFAULT 'da_inviare'");
   ensureColumn("documents", "draft_id", "draft_id TEXT");
+  ensureColumn("processed", "category", "category TEXT");
+  ensureColumn("processed", "detail", "detail TEXT");
 }
 
 export { DATA_DIR, PDF_DIR, DB_PATH };
