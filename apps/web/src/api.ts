@@ -129,6 +129,19 @@ export interface ScanResult {
   remaining: number;
 }
 
+export interface ScanRun {
+  id: number;
+  kind: "manuale" | "giornaliero" | "periodo";
+  label: string | null;
+  created: number;
+  errors: number;
+  skipped: number;
+  classified: number;
+  skipped_irrelevant: number;
+  drafts_created: number;
+  run_at: string;
+}
+
 export type RetryResult =
   | { outcome: "done"; documentId: number }
   | { outcome: "skipped"; category: string; reason: string }
@@ -173,6 +186,7 @@ export const api = {
     request<ScanResult>("/api/scan/range", { method: "POST", body: JSON.stringify({ from, to }) }),
   retryProcessed: (id: number) =>
     request<RetryResult>(`/api/scan/processed/${id}/retry`, { method: "POST" }),
+  listScanHistory: () => request<ScanRun[]>("/api/scan/history"),
 
   getSettings: () => request<UserSettings>("/api/settings"),
   saveSettings: (s: Partial<UserSettings>) =>

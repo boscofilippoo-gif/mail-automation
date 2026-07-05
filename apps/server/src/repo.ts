@@ -10,6 +10,8 @@ import {
   type PriceListSource,
   type Processed,
   type ProcessedStatus,
+  type ScanRun,
+  type ScanRunKind,
   type SentStatus,
   type User,
   type UserSettings,
@@ -316,6 +318,75 @@ export function upsertUserSettings(userId: number, patch: Partial<UserSettings>)
        updated_at = datetime('now')`,
   ).run({ user_id: userId, ...merged });
   return merged;
+}
+
+/* ───────────────────────── Storico scansioni ───────────────────────── */
+
+interface ScanCounters {
+  created: number;
+  errors: number;
+  skipped: number;
+  classified: number;
+  skippedIrrelevant: number;
+  draftsCreated: number;
+}
+
+const SCAN_RUNS_KEEP = 50;
+
+function pruneScanRuns(userId: number): void {
+  db.prepare(
+    `DELETE FROM scan_runs WHERE user_id = ? AND id NOT IN
+       (SELECT id FROM scan_runs WHERE user_id = ? ORDER BY id DESC LIMIT ?)`,
+  ).run(userId, userId, SCAN_RUNS_KEEP);
+}
+
+export function insertScanRun(
+  userId: number,
+  kind: ScanRunKind,
+  label: string | null,
+  r: ScanCounters,
+): void {
+  db.prepare(
+    `INSERT INTO scan_runs
+       (user_id, kind, label, created, errors, skipped, classified, skipped_irrelevant, drafts_created)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(userId, kind, label, r.created, r.errors, r.skipped, r.classified, r.skippedIrrelevant, r.draftsCreated);
+  pruneScanRuns(userId);
+}
+
+/**
+ * Storico per lo scan a periodo: i lotti del loop client vengono accumulati
+ * in UNA riga — se l'ultima riga dell'utente è 'periodo' con la stessa label
+ * ed è più recente di 15 minuti, somma i contatori; altrimenti nuova riga.
+ */
+export function accumulateRangeRun(userId: number, label: string, r: ScanCounters): void {
+  const last = db
+    .prepare(`SELECT * FROM scan_runs WHERE user_id = ? ORDER BY id DESC LIMIT 1`)
+    .get(userId) as ScanRun | undefined;
+
+  const isRecentSameRange =
+    last &&
+    last.kind === "periodo" &&
+    last.label === label &&
+    Date.now() - new Date(last.run_at + "Z").getTime() < 15 * 60 * 1000;
+
+  if (isRecentSameRange) {
+    db.prepare(
+      `UPDATE scan_runs SET
+         created = created + ?, errors = errors + ?, skipped = skipped + ?,
+         classified = classified + ?, skipped_irrelevant = skipped_irrelevant + ?,
+         drafts_created = drafts_created + ?, run_at = datetime('now')
+       WHERE id = ?`,
+    ).run(r.created, r.errors, r.skipped, r.classified, r.skippedIrrelevant, r.draftsCreated, last.id);
+  } else {
+    insertScanRun(userId, "periodo", label, r);
+  }
+}
+
+export function listScanRuns(userId: number, limit = 20): ScanRun[] {
+  return db
+    .prepare(`SELECT * FROM scan_runs WHERE user_id = ? ORDER BY id DESC LIMIT ?`)
+    .all(userId, limit) as ScanRun[];
 }
 
 /* ───────────────────────── Sync state ───────────────────────── */

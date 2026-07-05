@@ -12,10 +12,13 @@ import { classifyEmail, CONFIDENCE_THRESHOLD } from "../ai/classify.js";
 import { getAuthedClientForUser } from "../auth/google.js";
 import { hydrateMessage } from "../gmail/scan.js";
 import {
+  accumulateRangeRun,
   getPriceList,
   getProcessed,
   getUserSettings,
+  insertScanRun,
   listKeywords,
+  listScanRuns,
   recordProcessed,
 } from "../repo.js";
 
@@ -23,10 +26,16 @@ export const scanRouter = Router();
 
 scanRouter.use(requireAuth);
 
+/** Storico delle scansioni (manuali, giornaliere, per periodo). */
+scanRouter.get("/history", (req, res) => {
+  res.json(listScanRuns(req.userId!));
+});
+
 /** Trigger manuale ("Scansiona ora"): ultimi 15 giorni, budget 50 classificazioni. */
 scanRouter.post("/", async (req, res) => {
   try {
     const result = await scanUser(req.userId!, MANUAL_SCAN_OPTS);
+    insertScanRun(req.userId!, "manuale", null, result);
     res.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -66,6 +75,8 @@ scanRouter.post("/range", async (req, res) => {
       return;
     }
     const result = await scanUser(req.userId!, { window, classifyBudget: RANGE_BATCH_BUDGET });
+    // i lotti dello stesso periodo si accumulano in un'unica riga di storico
+    accumulateRangeRun(req.userId!, `${from} → ${to}`, result);
     res.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

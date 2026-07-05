@@ -35,6 +35,23 @@ export interface Processed {
   detail: string | null; // motivo in una frase, per l'utente
 }
 
+/** Origine di un'esecuzione di scan registrata nello storico. */
+export type ScanRunKind = "manuale" | "giornaliero" | "periodo";
+
+export interface ScanRun {
+  id: number;
+  user_id: number;
+  kind: ScanRunKind;
+  label: string | null;
+  created: number;
+  errors: number;
+  skipped: number;
+  classified: number;
+  skipped_irrelevant: number;
+  drafts_created: number;
+  run_at: string;
+}
+
 /** Stato di invio di un documento generato. */
 export type SentStatus = "da_inviare" | "bozza" | "inviato";
 

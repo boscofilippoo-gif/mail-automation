@@ -92,6 +92,20 @@ export function migrate(): void {
       synced_at   TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS scan_runs (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id            INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind               TEXT NOT NULL,   -- 'manuale' | 'giornaliero' | 'periodo'
+      label              TEXT,            -- per periodo: '2026-06-01 → 2026-06-30'
+      created            INTEGER NOT NULL,
+      errors             INTEGER NOT NULL,
+      skipped            INTEGER NOT NULL,
+      classified         INTEGER NOT NULL,
+      skipped_irrelevant INTEGER NOT NULL,
+      drafts_created     INTEGER NOT NULL,
+      run_at             TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS user_settings (
       user_id         INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       template_id     TEXT NOT NULL DEFAULT 'classic',

@@ -15,8 +15,20 @@ import {
   Square,
 } from "lucide-react";
 
-import { api, type DocumentItem, type ProcessedItem, type ScanResult, type SentStatus } from "@/api";
+import { api, type DocumentItem, type ProcessedItem, type ScanResult, type ScanRun, type SentStatus } from "@/api";
 import { cn } from "@/lib/utils";
+
+const RUN_KIND_LABEL: Record<ScanRun["kind"], string> = {
+  manuale: "Manuale",
+  giornaliero: "Automatica",
+  periodo: "Periodo",
+};
+
+const RUN_KIND_BG: Record<ScanRun["kind"], string> = {
+  manuale: "color-mix(in oklab, var(--azzurro) 22%, transparent)",
+  giornaliero: "color-mix(in oklab, var(--porcellana) 12%, transparent)",
+  periodo: "color-mix(in oklab, var(--rosa) 18%, transparent)",
+};
 
 const CATEGORY_LABEL: Record<string, string> = {
   richiesta_commerciale: "Richiesta commerciale",
@@ -67,9 +79,12 @@ export function Dashboard() {
   const [rangeProgress, setRangeProgress] = useState<{ analyzed: number; remaining: number } | null>(null);
   const stopRange = useRef(false);
 
+  const [history, setHistory] = useState<ScanRun[]>([]);
+
   function reload() {
     api.listDocuments().then(setDocs).catch(() => {});
     api.listProcessed().then(setProcessed).catch(() => {});
+    api.listScanHistory().then(setHistory).catch(() => {});
   }
   useEffect(reload, []);
 
@@ -276,6 +291,9 @@ export function Dashboard() {
         </div>
       )}
 
+      {/* Storico scansioni */}
+      <ScanHistory history={history} />
+
       {/* Documenti */}
       {docs.length === 0 ? (
         <div className="mt-8 rounded-2xl border border-dashed border-border p-12 text-center">
@@ -299,6 +317,63 @@ export function Dashboard() {
       {/* Log mail processate */}
       {processed.length > 0 && (
         <ProcessedLog processed={processed} onChanged={reload} />
+      )}
+    </div>
+  );
+}
+
+/* ───────────────── Storico scansioni ───────────────── */
+
+function ScanHistory({ history }: { history: ScanRun[] }) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div className="mt-8">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 font-mono text-sm uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        Storico scansioni
+        <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="mt-4 overflow-hidden rounded-xl border border-border">
+          {history.length === 0 && (
+            <p className="px-4 py-3 text-sm text-muted-foreground">
+              Nessuna scansione registrata (lo storico parte da oggi).
+            </p>
+          )}
+          {history.map((r, i) => (
+            <div
+              key={r.id}
+              className={cn(
+                "flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-sm",
+                i > 0 && "border-t border-border",
+              )}
+            >
+              <span className="shrink-0 rounded-full px-2.5 py-0.5 text-xs" style={{ background: RUN_KIND_BG[r.kind] }}>
+                {RUN_KIND_LABEL[r.kind]}
+              </span>
+              {r.label && <span className="shrink-0 font-mono text-xs text-muted-foreground/70">{r.label}</span>}
+              <span className="shrink-0 font-mono text-xs text-muted-foreground/70">
+                {new Date(r.run_at + "Z").toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+              </span>
+              <span className="ml-auto text-muted-foreground">
+                <strong className={cn(r.created > 0 && "text-foreground")}>{r.created} documenti</strong>
+                {" · "}{r.classified} analizzate · {r.skipped_irrelevant} ignorate
+                {r.errors > 0 ? (
+                  <>
+                    {" · "}
+                    <span style={{ color: "var(--rosa)" }}>{r.errors} errori</span>
+                  </>
+                ) : (
+                  " · 0 errori"
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

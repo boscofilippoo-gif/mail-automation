@@ -18,6 +18,7 @@ import {
   getUserSettings,
   hasScope,
   insertDocument,
+  insertScanRun,
   isProcessed,
   listActiveKeywords,
   listActiveUserIds,
@@ -325,6 +326,8 @@ export async function scanAllUsers(): Promise<void> {
   for (const id of ids) {
     try {
       const r = await scanUser(id, DAILY_SCAN_OPTS);
+      // storico: anche i run "vuoti" mostrano all'utente che il sistema ha girato
+      insertScanRun(id, "giornaliero", null, r);
       console.log(`[scan] user ${id}:`, r);
     } catch (err) {
       console.error(`[scan] scan fallito per user ${id}:`, err);
