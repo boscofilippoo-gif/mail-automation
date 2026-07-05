@@ -33,6 +33,11 @@ export interface Processed {
   processed_at: string;
 }
 
+/** Stato di invio di un documento generato. */
+export type SentStatus = "da_inviare" | "bozza" | "inviato";
+
+export const SENT_STATUSES: SentStatus[] = ["da_inviare", "bozza", "inviato"];
+
 export interface DocumentRecord {
   id: number;
   user_id: number;
@@ -41,6 +46,8 @@ export interface DocumentRecord {
   pdf_path: string;
   source_message_id: string;
   created_at: string;
+  sent_status: SentStatus;
+  draft_id: string | null;
 }
 
 /** Personalizzazione del documento PDF (template, colori, dati azienda, logo). */
@@ -59,6 +66,8 @@ export interface TemplateSettings {
 /** Impostazioni utente complete: personalizzazione PDF + preferenze di scansione. */
 export interface UserSettings extends TemplateSettings {
   smart_scan: number; // 0 | 1 (come keywords.active)
+  email_signature: string | null; // firma appesa alle bozze di risposta
+  auto_draft: number; // 0 | 1: crea la bozza automaticamente dopo lo scan
 }
 
 /**
@@ -76,6 +85,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   footer_note: null,
   logo_data_url: null,
   smart_scan: 0,
+  email_signature: null,
+  auto_draft: 0,
 };
 
 /**

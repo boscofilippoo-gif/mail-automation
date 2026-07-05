@@ -10,6 +10,7 @@ import {
   type PriceListSource,
   type Processed,
   type ProcessedStatus,
+  type SentStatus,
   type User,
   type UserSettings,
 } from "./types.js";
@@ -177,6 +178,25 @@ export function getDocument(userId: number, id: number): DocumentRecord | undefi
     .get(id, userId) as DocumentRecord | undefined;
 }
 
+/** Aggiorna lo stato di invio di un documento (e opzionalmente l'id della bozza Gmail). */
+export function updateDocumentStatus(
+  userId: number,
+  id: number,
+  status: SentStatus,
+  draftId?: string,
+): void {
+  if (draftId !== undefined) {
+    db.prepare(`UPDATE documents SET sent_status = ?, draft_id = ? WHERE id = ? AND user_id = ?`).run(
+      status,
+      draftId,
+      id,
+      userId,
+    );
+  } else {
+    db.prepare(`UPDATE documents SET sent_status = ? WHERE id = ? AND user_id = ?`).run(status, id, userId);
+  }
+}
+
 /** Aggiorna un documento dopo una modifica manuale (nuovo JSON + nuovo PDF). */
 export function updateDocument(
   userId: number,
@@ -262,6 +282,8 @@ export function getUserSettings(userId: number): UserSettings {
     footer_note: row.footer_note,
     logo_data_url: row.logo_data_url,
     smart_scan: row.smart_scan,
+    email_signature: row.email_signature,
+    auto_draft: row.auto_draft,
   };
 }
 
@@ -270,15 +292,18 @@ export function upsertUserSettings(userId: number, patch: Partial<UserSettings>)
   db.prepare(
     `INSERT INTO user_settings
        (user_id, template_id, accent_color, company_name, company_address, company_vat,
-        company_email, company_phone, footer_note, logo_data_url, smart_scan, updated_at)
+        company_email, company_phone, footer_note, logo_data_url, smart_scan,
+        email_signature, auto_draft, updated_at)
      VALUES
        (@user_id, @template_id, @accent_color, @company_name, @company_address, @company_vat,
-        @company_email, @company_phone, @footer_note, @logo_data_url, @smart_scan, datetime('now'))
+        @company_email, @company_phone, @footer_note, @logo_data_url, @smart_scan,
+        @email_signature, @auto_draft, datetime('now'))
      ON CONFLICT(user_id) DO UPDATE SET
        template_id = @template_id, accent_color = @accent_color, company_name = @company_name,
        company_address = @company_address, company_vat = @company_vat, company_email = @company_email,
        company_phone = @company_phone, footer_note = @footer_note, logo_data_url = @logo_data_url,
-       smart_scan = @smart_scan, updated_at = datetime('now')`,
+       smart_scan = @smart_scan, email_signature = @email_signature, auto_draft = @auto_draft,
+       updated_at = datetime('now')`,
   ).run({ user_id: userId, ...merged });
   return merged;
 }

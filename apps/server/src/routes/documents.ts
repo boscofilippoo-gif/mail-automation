@@ -3,10 +3,31 @@ import fs from "node:fs";
 import { Router } from "express";
 
 import { requireAuth } from "../auth/session.js";
-import { getDocument, getUserSettings, listDocuments, listProcessed, updateDocument } from "../repo.js";
+import {
+  getDocument,
+  getUserSettings,
+  hasScope,
+  listDocuments,
+  listProcessed,
+  updateDocument,
+  updateDocumentStatus,
+} from "../repo.js";
 import { getTemplate } from "../pdf/templates/index.js";
 import { generatePdf } from "../pdf/generate.js";
-import { DOC_TYPES, type DocType, type ExtractedDocument, type LineItem } from "../types.js";
+import { getAuthedClientForUser } from "../auth/google.js";
+import { hydrateMessage } from "../gmail/scan.js";
+import { createReplyDraft, fetchReplyMeta } from "../gmail/draft.js";
+import { NeedsReauthError } from "../listino/sheet.js";
+import { generateReplyBody } from "../ai/reply.js";
+import { DRAFTS_SCOPE } from "../env.js";
+import {
+  DOC_TYPES,
+  SENT_STATUSES,
+  type DocType,
+  type ExtractedDocument,
+  type LineItem,
+  type SentStatus,
+} from "../types.js";
 
 export const documentsRouter = Router();
 
@@ -81,6 +102,8 @@ documentsRouter.get("/", (req, res) => {
     type: d.type,
     createdAt: d.created_at,
     sourceMessageId: d.source_message_id,
+    sentStatus: d.sent_status,
+    draftId: d.draft_id,
     data: JSON.parse(d.extracted_json),
   }));
   res.json(docs);
@@ -118,8 +141,114 @@ documentsRouter.get("/:id", (req, res) => {
     id: doc.id,
     type: doc.type,
     createdAt: doc.created_at,
+    sentStatus: doc.sent_status,
+    draftId: doc.draft_id,
     data: JSON.parse(doc.extracted_json),
   });
+});
+
+/**
+ * Crea la bozza di risposta in Gmail: nel thread originale, col PDF allegato
+ * e un testo scritto dall'AI + firma. SOLO bozza: l'invio resta all'utente.
+ */
+documentsRouter.post("/:id/draft", async (req, res) => {
+  const doc = getDocument(req.userId!, Number(req.params.id));
+  if (!doc) {
+    res.status(404).json({ error: "Documento non trovato" });
+    return;
+  }
+  // check deterministico sullo scope salvato prima di chiamare Gmail
+  if (!hasScope(req.userId!, DRAFTS_SCOPE)) {
+    res.json({ error: "Servono nuovi permessi Google per creare bozze.", needsReauth: true });
+    return;
+  }
+
+  try {
+    const settings = getUserSettings(req.userId!);
+    const data = JSON.parse(doc.extracted_json) as ExtractedDocument;
+
+    // il PDF può essere sparito (disco effimero su Render): rigeneralo e persisti
+    let pdfPath = doc.pdf_path;
+    if (!fs.existsSync(pdfPath)) {
+      pdfPath = await generatePdf(data, settings);
+      updateDocument(req.userId!, doc.id, doc.extracted_json, pdfPath);
+    }
+
+    const client = getAuthedClientForUser(req.userId!);
+
+    let meta;
+    let originalBody = "";
+    try {
+      meta = await fetchReplyMeta(client, doc.source_message_id);
+      originalBody = (await hydrateMessage(client, doc.source_message_id)).bodyText;
+    } catch {
+      res.status(400).json({ error: "Impossibile rispondere: la mail originale non è più presente in Gmail." });
+      return;
+    }
+
+    let body = await generateReplyBody({
+      customerName: data.customer_name,
+      docType: doc.type,
+      docNumber: data.document_number,
+      total: data.total,
+      currency: data.currency,
+      itemCount: data.line_items.length,
+      missingPriceCount: data.line_items.filter((li) => li.unit_price === null).length,
+      originalSnippet: originalBody || meta.subject,
+    });
+    // firma appesa in codice: il modello non può storpiarla
+    const signature = settings.email_signature ?? settings.company_name;
+    if (signature) body += `\n\n${signature}`;
+
+    const draftId = await createReplyDraft(client, {
+      meta,
+      bodyText: body,
+      pdfPath,
+      filename: `${doc.type}-${doc.id}.pdf`,
+    });
+    updateDocumentStatus(req.userId!, doc.id, "bozza", draftId);
+    res.json({ sentStatus: "bozza", draftId });
+  } catch (err) {
+    if (err instanceof NeedsReauthError) {
+      res.json({ error: err.message, needsReauth: true });
+      return;
+    }
+    const message = err instanceof Error ? err.message : "Errore nella creazione della bozza";
+    console.error(`[documents] draft ${req.params.id} fallito:`, message);
+    res.status(400).json({ error: message });
+  }
+});
+
+/** Mail originale del documento, letta on-demand da Gmail (mai salvata). */
+documentsRouter.get("/:id/source", async (req, res) => {
+  const doc = getDocument(req.userId!, Number(req.params.id));
+  if (!doc) {
+    res.status(404).json({ error: "Documento non trovato" });
+    return;
+  }
+  try {
+    const client = getAuthedClientForUser(req.userId!);
+    const mail = await hydrateMessage(client, doc.source_message_id);
+    res.json({ subject: mail.subject, from: mail.from, date: mail.date, bodyText: mail.bodyText });
+  } catch {
+    res.status(404).json({ error: "Mail originale non trovata (eliminata da Gmail?)" });
+  }
+});
+
+/** Aggiorna lo stato di invio (es. "Segna come inviato"). */
+documentsRouter.patch("/:id/status", (req, res) => {
+  const doc = getDocument(req.userId!, Number(req.params.id));
+  if (!doc) {
+    res.status(404).json({ error: "Documento non trovato" });
+    return;
+  }
+  const { sentStatus } = req.body as { sentStatus?: string };
+  if (!SENT_STATUSES.includes(sentStatus as SentStatus)) {
+    res.status(400).json({ error: "Stato non valido." });
+    return;
+  }
+  updateDocumentStatus(req.userId!, doc.id, sentStatus as SentStatus);
+  res.json({ ok: true, sentStatus });
 });
 
 /** Salva un documento modificato: valida, rigenera il PDF, sostituisce il vecchio. */

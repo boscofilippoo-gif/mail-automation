@@ -85,13 +85,26 @@ export type ListinoState =
 /** Risposta delle route listino che possono chiedere la riautorizzazione Google. */
 export type ListinoResult = ListinoState | { error: string; needsReauth?: boolean };
 
+export type SentStatus = "da_inviare" | "bozza" | "inviato";
+
 export interface DocumentItem {
   id: number;
   type: DocType;
   createdAt: string;
   sourceMessageId: string;
+  sentStatus: SentStatus;
+  draftId: string | null;
   data: ExtractedDocument;
 }
+
+export interface SourceMail {
+  subject: string;
+  from: string;
+  date: string;
+  bodyText: string;
+}
+
+export type DraftResult = { sentStatus: SentStatus; draftId: string } | { error: string; needsReauth?: boolean };
 
 export interface ProcessedItem {
   id: number;
@@ -110,6 +123,7 @@ export interface ScanResult {
   skipped: number;
   classified: number;
   skippedIrrelevant: number;
+  draftsCreated: number;
 }
 
 export interface UserSettings {
@@ -123,6 +137,8 @@ export interface UserSettings {
   footer_note: string | null;
   logo_data_url: string | null;
   smart_scan: number;
+  email_signature: string | null;
+  auto_draft: number;
 }
 
 export const api = {
@@ -169,6 +185,13 @@ export const api = {
     ),
   previewDocument: (data: ExtractedDocument) =>
     requestText("/api/documents/preview", { method: "POST", body: JSON.stringify({ data }) }),
+  createDraft: (id: number) => request<DraftResult>(`/api/documents/${id}/draft`, { method: "POST" }),
+  getSource: (id: number) => request<SourceMail>(`/api/documents/${id}/source`),
+  setStatus: (id: number, sentStatus: SentStatus) =>
+    request<{ ok: true }>(`/api/documents/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ sentStatus }),
+    }),
 
   pdfUrl: (id: number, download = false) =>
     `/api/documents/${id}/pdf${download ? "?download=1" : ""}`,

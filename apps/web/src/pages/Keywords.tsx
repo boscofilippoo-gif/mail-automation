@@ -1,10 +1,35 @@
 import { useEffect, useState } from "react";
-import { Plus, Sparkles, Trash2 } from "lucide-react";
+import { Plus, Send, Sparkles, Trash2 } from "lucide-react";
 
 import { api, type DocType, type Keyword } from "@/api";
 import { cn } from "@/lib/utils";
 
 const DOC_TYPES: DocType[] = ["preventivo", "fattura", "ordine"];
+
+/** Interruttore on/off in stile brand (azzurro quando attivo). */
+function ToggleSwitch({ checked, onToggle }: { checked: boolean | null; onToggle: () => void }) {
+  return (
+    <button
+      role="switch"
+      aria-checked={checked ?? false}
+      onClick={onToggle}
+      disabled={checked === null}
+      className={cn(
+        "relative h-7 w-12 shrink-0 rounded-full border transition-colors disabled:opacity-50",
+        checked ? "border-transparent" : "border-border bg-transparent",
+      )}
+      style={checked ? { background: "var(--azzurro)" } : undefined}
+    >
+      <span
+        className={cn(
+          "absolute top-0.5 size-[22px] rounded-full bg-foreground transition-transform",
+          checked ? "translate-x-[22px]" : "translate-x-0.5",
+        )}
+        style={checked ? { background: "var(--nero)" } : undefined}
+      />
+    </button>
+  );
+}
 
 export function Keywords() {
   const [keywords, setKeywords] = useState<Keyword[]>([]);
@@ -13,23 +38,38 @@ export function Keywords() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [smartScan, setSmartScan] = useState<boolean | null>(null);
+  const [autoDraft, setAutoDraft] = useState<boolean | null>(null);
 
   function reload() {
     api.listKeywords().then(setKeywords).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }
   useEffect(reload, []);
   useEffect(() => {
-    api.getSettings().then((s) => setSmartScan(Boolean(s.smart_scan))).catch(() => setSmartScan(false));
+    api
+      .getSettings()
+      .then((s) => {
+        setSmartScan(Boolean(s.smart_scan));
+        setAutoDraft(Boolean(s.auto_draft));
+      })
+      .catch(() => {
+        setSmartScan(false);
+        setAutoDraft(false);
+      });
   }, []);
 
-  async function toggleSmartScan() {
-    if (smartScan === null) return;
-    const next = !smartScan;
-    setSmartScan(next); // ottimistico
+  /** Toggle ottimistico con rollback su errore. */
+  async function toggleSetting(
+    current: boolean | null,
+    set: (v: boolean) => void,
+    field: "smart_scan" | "auto_draft",
+  ) {
+    if (current === null) return;
+    const next = !current;
+    set(next);
     try {
-      await api.saveSettings({ smart_scan: next ? 1 : 0 });
+      await api.saveSettings({ [field]: next ? 1 : 0 });
     } catch (e) {
-      setSmartScan(!next); // rollback
+      set(!next);
       setError(e instanceof Error ? e.message : "Errore nel salvataggio");
     }
   }
@@ -74,25 +114,28 @@ export function Keywords() {
             </p>
           </div>
         </div>
-        <button
-          role="switch"
-          aria-checked={smartScan ?? false}
-          onClick={toggleSmartScan}
-          disabled={smartScan === null}
-          className={cn(
-            "relative h-7 w-12 shrink-0 rounded-full border transition-colors disabled:opacity-50",
-            smartScan ? "border-transparent" : "border-border bg-transparent",
-          )}
-          style={smartScan ? { background: "var(--azzurro)" } : undefined}
-        >
-          <span
-            className={cn(
-              "absolute top-0.5 size-[22px] rounded-full bg-foreground transition-transform",
-              smartScan ? "translate-x-[22px]" : "translate-x-0.5",
-            )}
-            style={smartScan ? { background: "var(--nero)" } : undefined}
-          />
-        </button>
+        <ToggleSwitch
+          checked={smartScan}
+          onToggle={() => toggleSetting(smartScan, setSmartScan, "smart_scan")}
+        />
+      </div>
+
+      {/* ── Bozza automatica ── */}
+      <div className="mt-4 flex items-start justify-between gap-6 rounded-2xl border border-border bg-card p-6">
+        <div className="flex items-start gap-4">
+          <Send className="mt-1 size-5 shrink-0" style={{ color: "var(--azzurro)" }} />
+          <div>
+            <h2 className="font-semibold">Bozza di risposta automatica</h2>
+            <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
+              Per ogni documento generato, prepara subito una bozza di risposta in Gmail col PDF
+              allegato. L'invio resta sempre a te. (La firma si imposta nelle Impostazioni.)
+            </p>
+          </div>
+        </div>
+        <ToggleSwitch
+          checked={autoDraft}
+          onToggle={() => toggleSetting(autoDraft, setAutoDraft, "auto_draft")}
+        />
       </div>
 
       <h2 className="mt-12 text-lg font-semibold tracking-tight">

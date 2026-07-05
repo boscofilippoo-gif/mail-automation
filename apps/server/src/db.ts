@@ -17,6 +17,17 @@ export const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
+/**
+ * Aggiunge una colonna a una tabella esistente se manca (ALTER guardato).
+ * SQLite applica i DEFAULT costanti anche alle righe esistenti.
+ */
+function ensureColumn(table: string, column: string, ddl: string): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  }
+}
+
 /** Crea lo schema se non esiste. Idempotente: si può chiamare a ogni avvio. */
 export function migrate(): void {
   db.exec(`
@@ -96,6 +107,12 @@ export function migrate(): void {
       updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  // ── colonne aggiunte dopo il primo deploy: ALTER guardati, idempotenti ──
+  ensureColumn("user_settings", "email_signature", "email_signature TEXT");
+  ensureColumn("user_settings", "auto_draft", "auto_draft INTEGER NOT NULL DEFAULT 0");
+  ensureColumn("documents", "sent_status", "sent_status TEXT NOT NULL DEFAULT 'da_inviare'");
+  ensureColumn("documents", "draft_id", "draft_id TEXT");
 }
 
 export { DATA_DIR, PDF_DIR, DB_PATH };

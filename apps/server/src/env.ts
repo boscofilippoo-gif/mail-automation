@@ -54,20 +54,30 @@ export const env = {
     classifyModel: optional("ANTHROPIC_CLASSIFY_MODEL", "claude-haiku-4-5"),
     // modello per il parsing del listino (mapping colonne, lettura PDF)
     listinoModel: optional("ANTHROPIC_LISTINO_MODEL", "claude-haiku-4-5"),
+    // modello per il testo delle bozze di risposta
+    replyModel: optional("ANTHROPIC_REPLY_MODEL", "claude-haiku-4-5"),
   },
 
   sessionSecret: required("SESSION_SECRET"),
   tokenEncKey: required("TOKEN_ENC_KEY"),
 } as const;
 
-/** Scope OAuth richiesti: identità di base + lettura Gmail + lettura Sheets (listino). */
+/** Scope OAuth richiesti: identità + lettura Gmail + lettura Sheets + bozze Gmail. */
 export const GOOGLE_SCOPES = [
   "openid",
   "email",
   "profile",
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/spreadsheets.readonly",
+  "https://www.googleapis.com/auth/gmail.compose",
 ];
 
 /** Scope necessario per leggere il listino da Google Sheets. */
 export const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
+
+/**
+ * Scope per creare le bozze di risposta. NOTA: gmail.compose autorizzerebbe
+ * tecnicamente anche l'invio — la garanzia "solo bozze" è che questa app non
+ * chiama MAI drafts.send/messages.send. È comunque lo scope minimo per drafts.create.
+ */
+export const DRAFTS_SCOPE = "https://www.googleapis.com/auth/gmail.compose";

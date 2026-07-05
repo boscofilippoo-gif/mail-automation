@@ -1,9 +1,21 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Download, Eye, FileText, Pencil, RefreshCw } from "lucide-react";
+import { Check, Download, Eye, FileText, Loader2, Pencil, RefreshCw, Send } from "lucide-react";
 
-import { api, type DocumentItem, type ProcessedItem, type ScanResult } from "@/api";
+import { api, type DocumentItem, type ProcessedItem, type ScanResult, type SentStatus } from "@/api";
 import { cn } from "@/lib/utils";
+
+const STATUS_LABEL: Record<SentStatus, string> = {
+  da_inviare: "Da inviare",
+  bozza: "Bozza in Gmail",
+  inviato: "Inviato",
+};
+
+const STATUS_BG: Record<SentStatus, string> = {
+  da_inviare: "color-mix(in oklab, var(--rosa) 18%, transparent)",
+  bozza: "color-mix(in oklab, var(--azzurro) 22%, transparent)",
+  inviato: "color-mix(in oklab, var(--porcellana) 12%, transparent)",
+};
 
 export function Dashboard() {
   const [docs, setDocs] = useState<DocumentItem[]>([]);
@@ -11,6 +23,7 @@ export function Dashboard() {
   const [scanning, setScanning] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsReauth, setNeedsReauth] = useState(false);
 
   function reload() {
     api.listDocuments().then(setDocs).catch(() => {});
@@ -62,10 +75,26 @@ export function Dashboard() {
               {" "}· {result.classified} analizzate dall'AI · {result.skippedIrrelevant} ignorate
             </>
           )}
+          {result.draftsCreated > 0 && <> · {result.draftsCreated} bozze create</>}
           .
         </p>
       )}
       {error && <p className="mt-4 text-sm" style={{ color: "var(--rosa)" }}>{error}</p>}
+      {needsReauth && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-5" style={{ borderColor: "var(--rosa)" }}>
+          <p className="text-sm">
+            <strong>Servono nuovi permessi Google</strong> per creare le bozze di risposta.
+            Riautorizza l'accesso (un click, torni qui subito).
+          </p>
+          <button
+            onClick={() => (window.location.href = "/auth/google")}
+            className="rounded-full px-5 py-2 text-sm font-medium"
+            style={{ background: "var(--azzurro)", color: "var(--nero)" }}
+          >
+            Riautorizza con Google
+          </button>
+        </div>
+      )}
 
       {/* Documenti */}
       {docs.length === 0 ? (
@@ -82,7 +111,7 @@ export function Dashboard() {
       ) : (
         <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
           {docs.map((d) => (
-            <DocCard key={d.id} doc={d} />
+            <DocCard key={d.id} doc={d} onChanged={reload} onNeedsReauth={() => setNeedsReauth(true)} />
           ))}
         </div>
       )}
@@ -140,20 +169,61 @@ export function Dashboard() {
   );
 }
 
-function DocCard({ doc }: { doc: DocumentItem }) {
+function DocCard({
+  doc,
+  onChanged,
+  onNeedsReauth,
+}: {
+  doc: DocumentItem;
+  onChanged: () => void;
+  onNeedsReauth: () => void;
+}) {
   const d = doc.data;
+  const [drafting, setDrafting] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
   const accent = doc.type === "fattura" ? "var(--azzurro)" : "var(--rosa)";
   const fmt = (n: number | null) =>
     n === null
       ? "—"
       : new Intl.NumberFormat("it-IT", { style: "currency", currency: d.currency || "EUR" }).format(n);
 
+  async function prepareDraft() {
+    if (doc.sentStatus === "bozza" && !confirm("Esiste già una bozza in Gmail per questo documento. Crearne un'altra?")) {
+      return;
+    }
+    setDrafting(true);
+    setCardError(null);
+    try {
+      const r = await api.createDraft(doc.id);
+      if ("error" in r) {
+        if (r.needsReauth) onNeedsReauth();
+        else setCardError(r.error);
+      } else {
+        onChanged();
+      }
+    } catch (e) {
+      setCardError(e instanceof Error ? e.message : "Errore");
+    } finally {
+      setDrafting(false);
+    }
+  }
+
+  async function markSent() {
+    await api.setStatus(doc.id, "inviato").catch(() => {});
+    onChanged();
+  }
+
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
       <div className="flex items-center justify-between">
-        <span className="rounded-full px-2.5 py-0.5 text-xs capitalize" style={{ background: `color-mix(in oklab, ${accent} 22%, transparent)` }}>
-          {doc.type}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full px-2.5 py-0.5 text-xs capitalize" style={{ background: `color-mix(in oklab, ${accent} 22%, transparent)` }}>
+            {doc.type}
+          </span>
+          <span className="rounded-full px-2.5 py-0.5 text-xs" style={{ background: STATUS_BG[doc.sentStatus] }}>
+            {STATUS_LABEL[doc.sentStatus]}
+          </span>
+        </div>
         <span className="font-mono text-xs text-muted-foreground/70">
           {new Date(doc.createdAt + "Z").toLocaleDateString("it-IT")}
         </span>
@@ -162,6 +232,26 @@ function DocCard({ doc }: { doc: DocumentItem }) {
       <p className="mt-1 text-sm text-muted-foreground">
         {d.line_items.length} righe · Totale {fmt(d.total)}
       </p>
+      {cardError && <p className="mt-2 text-xs" style={{ color: "var(--rosa)" }}>{cardError}</p>}
+
+      <button
+        onClick={prepareDraft}
+        disabled={drafting}
+        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium disabled:opacity-60"
+        style={{ background: "var(--azzurro)", color: "var(--nero)" }}
+      >
+        {drafting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+        {drafting ? "Preparo la bozza…" : "Prepara risposta"}
+      </button>
+      {doc.sentStatus !== "inviato" && (
+        <button
+          onClick={markSent}
+          className="mt-2 inline-flex w-full items-center justify-center gap-1.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Check className="size-3.5" />
+          Segna come inviato
+        </button>
+      )}
       <div className="mt-5 flex gap-2">
         <a
           href={api.pdfUrl(doc.id)}

@@ -22,6 +22,7 @@ const TEXT_CAPS: Record<string, number> = {
   company_email: 120,
   company_phone: 40,
   footer_note: 500,
+  email_signature: 500,
 };
 
 /**
@@ -71,6 +72,9 @@ function validateSettings(body: Record<string, unknown>): Partial<UserSettings> 
 
   if ("smart_scan" in body) {
     out.smart_scan = body.smart_scan ? 1 : 0;
+  }
+  if ("auto_draft" in body) {
+    out.auto_draft = body.auto_draft ? 1 : 0;
   }
 
   return out;

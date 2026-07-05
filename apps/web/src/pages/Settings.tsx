@@ -103,6 +103,21 @@ export function Settings() {
           <AccentPicker value={draft.accent_color} onChange={(c) => patch({ accent_color: c })} />
           <LogoUploader value={draft.logo_data_url} onChange={(l) => patch({ logo_data_url: l })} onError={setError} />
           <CompanyForm draft={draft} onPatch={patch} />
+
+          {/* firma per le bozze di risposta Gmail */}
+          <section>
+            <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Firma email</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Aggiunta in fondo alle bozze di risposta create in Gmail.
+            </p>
+            <textarea
+              className={cn(inputCls, "mt-3")}
+              rows={3}
+              placeholder={"Cordiali saluti,\nMario Rossi — ACME Srl\ntel. 02 1234567"}
+              value={draft.email_signature ?? ""}
+              onChange={(e) => patch({ email_signature: e.target.value || null })}
+            />
+          </section>
         </div>
 
         <LivePreview draft={draft} />

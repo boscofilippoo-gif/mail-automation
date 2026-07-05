@@ -1,7 +1,10 @@
 import { getAuthedClientForUser } from "../auth/google.js";
 import { extractDocument } from "../ai/extract.js";
 import { classifyEmail, CONFIDENCE_THRESHOLD } from "../ai/classify.js";
+import { generateReplyBody } from "../ai/reply.js";
+import { createReplyDraft, fetchReplyMeta } from "../gmail/draft.js";
 import { generatePdf } from "../pdf/generate.js";
+import { DRAFTS_SCOPE } from "../env.js";
 import {
   hydrateMessage,
   listMessageIds,
@@ -12,12 +15,14 @@ import {
 import {
   getPriceList,
   getUserSettings,
+  hasScope,
   insertDocument,
   isProcessed,
   listActiveKeywords,
   listActiveUserIds,
   recordProcessed,
   touchSync,
+  updateDocumentStatus,
 } from "../repo.js";
 import type { DocType } from "../types.js";
 
@@ -28,6 +33,7 @@ export interface ScanResult {
   skipped: number; // già processate in precedenza (nessun costo)
   classified: number; // mail passate dal classificatore AI in questo run
   skippedIrrelevant: number; // classificate come non pertinenti (registrate, mai più riviste)
+  draftsCreated: number; // bozze di risposta create automaticamente (se auto_draft attivo)
 }
 
 /**
@@ -65,6 +71,7 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
     skipped: 0,
     classified: 0,
     skippedIrrelevant: 0,
+    draftsCreated: 0,
   };
   const settings = getUserSettings(userId);
   const keywords = listActiveKeywords(userId);
@@ -101,6 +108,35 @@ export async function scanUser(userId: number, opts: ScanOptions = DAILY_SCAN_OP
       });
       result.scanned++;
       result.created++;
+
+      // ── bozza automatica (opzionale): fallimento tollerato, il documento esiste comunque ──
+      if (settings.auto_draft && hasScope(userId, DRAFTS_SCOPE)) {
+        try {
+          const meta = await fetchReplyMeta(client, mail.id);
+          let body = await generateReplyBody({
+            customerName: extracted.customer_name,
+            docType,
+            docNumber: extracted.document_number,
+            total: extracted.total,
+            currency: extracted.currency,
+            itemCount: extracted.line_items.length,
+            missingPriceCount: extracted.line_items.filter((li) => li.unit_price === null).length,
+            originalSnippet: mail.bodyText || mail.subject,
+          });
+          const signature = settings.email_signature ?? settings.company_name;
+          if (signature) body += `\n\n${signature}`;
+          const draftId = await createReplyDraft(client, {
+            meta,
+            bodyText: body,
+            pdfPath,
+            filename: `${docType}-${docRecord.id}.pdf`,
+          });
+          updateDocumentStatus(userId, docRecord.id, "bozza", draftId);
+          result.draftsCreated++;
+        } catch (err) {
+          console.error(`[scan] bozza automatica fallita per doc ${docRecord.id}:`, err);
+        }
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[scan] errore elaborazione mail ${mail.id} (user ${userId}):`, message);
