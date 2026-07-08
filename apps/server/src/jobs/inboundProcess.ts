@@ -109,9 +109,27 @@ export async function processInboundItems(items: BrevoInboundItem[], inboundDoma
 
 async function processOne(item: BrevoInboundItem, inboundDomain: string): Promise<void> {
   const alias = findAlias(item, inboundDomain);
-  if (!alias) return; // non per noi: silenzio (nessun segnale ai prober)
+  if (!alias) {
+    // silenzio verso l'esterno, ma log interno: mostra la STRUTTURA reale del
+    // payload (destinatari) per diagnosticare mismatch di formato con Brevo
+    console.warn(
+      "[inbound] nessun alias trovato — struttura destinatari:",
+      JSON.stringify({
+        keys: Object.keys(item as Record<string, unknown>),
+        To: item.To,
+        Cc: item.Cc,
+        Recipients: item.Recipients,
+        Subject: item.Subject?.slice(0, 60),
+      }).slice(0, 1500),
+    );
+    return;
+  }
   const userId = getUserByAlias(alias);
-  if (!userId) return;
+  if (!userId) {
+    console.warn(`[inbound] alias "${alias}" non registrato ad alcun utente`);
+    return;
+  }
+  console.log(`[inbound] mail per user ${userId} (alias ${alias}): "${item.Subject?.slice(0, 60) ?? ""}"`);
 
   // conferma inoltro Gmail → salva per la UI, non processare oltre
   const confirmation = detectGmailConfirmation(item);
