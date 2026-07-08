@@ -10,15 +10,16 @@ export function PrivacyApp() {
   return (
     <LegalLayout title="Informativa sulla privacy" updated="luglio 2026">
       <p>
-        La presente informativa descrive come <strong>BORU studio</strong> ([Nome Cognome], P.IVA
-        [P.IVA], di seguito «Titolare») tratta i dati personali degli utenti del servizio Mail
-        Automation (l'«App»), ai sensi del Regolamento UE 2016/679 (GDPR).
+        La presente informativa descrive come <strong>BORU studio</strong> di Carlotta Rubinato
+        (P.IVA IT02713260061, di seguito «Titolare») tratta i dati personali degli utenti del
+        servizio Mail Automation (l'«App»), ai sensi del Regolamento UE 2016/679 (GDPR).
       </p>
 
       <LegalSection n="1" title="Titolare del trattamento">
         <p>
-          Titolare del trattamento è BORU studio — [Nome Cognome], P.IVA [P.IVA], [indirizzo].
-          Per qualsiasi richiesta relativa alla privacy: <strong>info@borustudio.it</strong>.
+          Titolare del trattamento è BORU studio di Carlotta Rubinato, P.IVA IT02713260061,
+          Via Roma 189, 15033 Casale Monferrato (AL), Italia. Per qualsiasi richiesta relativa
+          alla privacy: <strong>info@borustudio.it</strong>.
         </p>
       </LegalSection>
 

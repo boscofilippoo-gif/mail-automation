@@ -8,8 +8,8 @@ export function TerminiApp() {
   return (
     <LegalLayout title="Termini di servizio" updated="luglio 2026">
       <p>
-        Utilizzando il servizio Mail Automation (l'«App») fornito da <strong>BORU studio</strong>
-        ([Nome Cognome], P.IVA [P.IVA]) accetti i presenti termini.
+        Utilizzando il servizio Mail Automation (l'«App») fornito da <strong>BORU studio</strong> di
+        Carlotta Rubinato (P.IVA IT02713260061) accetti i presenti termini.
       </p>
 
       <LegalSection n="1" title="Cosa fa il servizio">
