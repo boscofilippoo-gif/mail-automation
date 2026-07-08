@@ -309,11 +309,23 @@ export function Dashboard() {
         <div className="mt-8 rounded-2xl border border-dashed border-border p-12 text-center">
           <FileText className="mx-auto size-8 text-muted-foreground" />
           <p className="mt-4 text-muted-foreground">
-            Ancora nessun documento. Configura una{" "}
-            <Link to="/keywords" className="underline decoration-dotted underline-offset-4">
-              parola chiave
-            </Link>{" "}
-            e premi “Scansiona ora”.
+            {inoltro ? (
+              <>
+                Ancora nessun documento. Inoltra una mail al tuo{" "}
+                <Link to="/settings" className="underline decoration-dotted underline-offset-4">
+                  indirizzo personale
+                </Link>{" "}
+                e comparirà qui da solo entro un minuto.
+              </>
+            ) : (
+              <>
+                Ancora nessun documento. Configura una{" "}
+                <Link to="/keywords" className="underline decoration-dotted underline-offset-4">
+                  parola chiave
+                </Link>{" "}
+                e premi “Scansiona ora”.
+              </>
+            )}
           </p>
         </div>
       ) : (
