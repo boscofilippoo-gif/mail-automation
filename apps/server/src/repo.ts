@@ -1,3 +1,5 @@
+import nodeCrypto from "node:crypto";
+
 import { db } from "./db.js";
 import { encrypt, decrypt } from "./crypto.js";
 import {
@@ -352,12 +354,27 @@ function randomAlias(): string {
   return s;
 }
 
+/**
+ * Alias DETERMINISTICO derivato dall'email (HMAC con la chiave segreta):
+ * stesso utente → stesso alias per sempre, anche se il DB viene azzerato
+ * (Render free è effimero). Così l'inoltro configurato dal cliente nella sua
+ * casella non si rompe mai. Resta unguessable senza la chiave.
+ */
+function deterministicAlias(email: string): string {
+  return nodeCrypto
+    .createHmac("sha256", process.env.TOKEN_ENC_KEY ?? "alias-key")
+    .update(email.trim().toLowerCase())
+    .digest("hex")
+    .slice(0, 12);
+}
+
 export function getOrCreateInboundAddress(userId: number): { alias: string; pending_confirmation: string | null } {
   const row = db
     .prepare(`SELECT alias, pending_confirmation FROM inbound_addresses WHERE user_id = ?`)
     .get(userId) as { alias: string; pending_confirmation: string | null } | undefined;
   if (row) return row;
-  const alias = randomAlias();
+  const user = getUserById(userId);
+  const alias = user ? deterministicAlias(user.email) : randomAlias();
   db.prepare(`INSERT INTO inbound_addresses (user_id, alias) VALUES (?, ?)`).run(userId, alias);
   return { alias, pending_confirmation: null };
 }
