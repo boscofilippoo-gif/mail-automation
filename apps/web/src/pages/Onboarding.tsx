@@ -147,7 +147,8 @@ export function Onboarding() {
         <button
           onClick={connectGmail}
           className={cn(
-            "rounded-2xl border border-border bg-card p-6 text-left transition-colors hover:border-accent",
+            "group flex cursor-pointer flex-col rounded-2xl border border-border bg-card p-6 text-left",
+            "transition-[border-color,transform,background-color] duration-200 hover:-translate-y-1 hover:border-accent-2 hover:bg-foreground/[0.05]",
           )}
         >
           <Mail className="size-6" style={{ color: "var(--rosa)" }} />
@@ -157,11 +158,17 @@ export function Onboarding() {
             <li>✓ Bozze di risposta pronte dentro Gmail</li>
             <li>– Solo Gmail · richiede un'autorizzazione extra di Google</li>
           </ul>
+          <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium transition-transform group-hover:translate-x-1" style={{ color: "var(--rosa)" }}>
+            Scegli Gmail <ArrowRight className="size-4" />
+          </span>
         </button>
 
         <button
           onClick={chooseInoltro}
-          className="rounded-2xl border border-border bg-card p-6 text-left transition-colors hover:border-accent"
+          className={cn(
+            "group flex cursor-pointer flex-col rounded-2xl border border-border bg-card p-6 text-left",
+            "transition-[border-color,transform,background-color] duration-200 hover:-translate-y-1 hover:border-accent hover:bg-foreground/[0.05]",
+          )}
         >
           <Forward className="size-6" style={{ color: "var(--azzurro)" }} />
           <h2 className="mt-4 flex items-center gap-2 font-semibold">
@@ -173,6 +180,9 @@ export function Onboarding() {
             <li>✓ Nessun avviso di sicurezza, nessuna autorizzazione extra</li>
             <li>– Richiede 2 minuti di configurazione guidata, una volta</li>
           </ul>
+          <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium transition-transform group-hover:translate-x-1" style={{ color: "var(--azzurro)" }}>
+            Scegli inoltro <ArrowRight className="size-4" />
+          </span>
         </button>
       </div>
     </div>
