@@ -17,9 +17,10 @@ export interface BrevoInboundItem {
   Uuid?: string[];
   MessageId?: string;
   From?: { Address?: string; Name?: string };
-  To?: { Address?: string }[];
-  Cc?: { Address?: string }[];
-  Recipients?: { Address?: string }[];
+  To?: (string | { Address?: string })[];
+  Cc?: (string | { Address?: string })[];
+  // NOTA: nel payload reale Recipients è un array di STRINGHE (verificato sul campo)
+  Recipients?: (string | { Address?: string })[];
   Subject?: string;
   RawTextBody?: string;
   RawHtmlBody?: string;
@@ -64,7 +65,9 @@ function findAlias(item: BrevoInboundItem, inboundDomain: string): string | null
     ...(item.Cc ?? []),
   ];
   for (const c of candidates) {
-    const addr = (c.Address ?? "").toLowerCase();
+    // Brevo manda Recipients come stringhe, To/Cc come oggetti: gestiamo entrambi
+    const raw = typeof c === "string" ? c : (c?.Address ?? "");
+    const addr = raw.toLowerCase().trim();
     if (addr.endsWith(`@${inboundDomain.toLowerCase()}`)) {
       return addr.split("@")[0] ?? null;
     }
