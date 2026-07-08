@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { ArrowRight, FileText, Mails, Sparkles } from "lucide-react";
 
 import { loginWithGoogle } from "@/api";
@@ -37,6 +38,12 @@ export function Login() {
         <Step icon={Mails} title="1 · Collega" text="Accedi con Gmail e collega il tuo listino prezzi: Google Sheet, PDF o CSV." />
         <Step icon={Sparkles} title="2 · Rileva" text="Ogni giorno l'AI trova le mail giuste da sola — o con le parole chiave che scegli tu." />
         <Step icon={FileText} title="3 · Genera" text="Il documento nasce già coi prezzi del listino, col tuo template. Lo modifichi e lo scarichi." />
+      </div>
+
+      <div className="mt-16 flex items-center gap-4 text-xs text-muted-foreground">
+        <Link to="/privacy" className="transition-colors hover:text-foreground">Privacy</Link>
+        <span aria-hidden>·</span>
+        <Link to="/termini" className="transition-colors hover:text-foreground">Termini di servizio</Link>
       </div>
     </div>
   );

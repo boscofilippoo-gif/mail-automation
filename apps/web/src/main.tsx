@@ -10,11 +10,16 @@ import { Keywords } from "@/pages/Keywords";
 import { Settings } from "@/pages/Settings";
 import { Listino } from "@/pages/Listino";
 import { EditDocument } from "@/pages/EditDocument";
+import { PrivacyApp } from "@/pages/legal/Privacy";
+import { TerminiApp } from "@/pages/legal/Termini";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <Routes>
+        {/* pagine legali: pubbliche, fuori dal layout autenticato */}
+        <Route path="/privacy" element={<PrivacyApp />} />
+        <Route path="/termini" element={<TerminiApp />} />
         <Route element={<App />}>
           <Route index element={<Login />} />
           <Route path="dashboard" element={<Dashboard />} />
