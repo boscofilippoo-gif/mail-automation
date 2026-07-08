@@ -59,7 +59,19 @@ export const env = {
 
   sessionSecret: required("SESSION_SECRET"),
   tokenEncKey: required("TOKEN_ENC_KEY"),
+
+  // ── Brevo: invio magic link + ricezione inoltri (feature-gate: senza key, mock/console) ──
+  brevo: {
+    apiKey: optional("BREVO_API_KEY", ""),
+    inboundWebhookKey: optional("INBOUND_WEBHOOK_KEY", ""),
+    inboundDomain: optional("INBOUND_DOMAIN", "inbox.borustudio.it"),
+    mailFrom: optional("MAIL_FROM", "accesso@borustudio.it"),
+    mailFromName: optional("MAIL_FROM_NAME", "BORU Mail Automation"),
+  },
 } as const;
+
+/** Scope minimi per il SOLO login (nessun avviso Google, nessuna scadenza). */
+export const BASIC_SCOPES = ["openid", "email", "profile"];
 
 /** Scope OAuth richiesti: identità + lettura Gmail + lettura Sheets + bozze Gmail. */
 export const GOOGLE_SCOPES = [

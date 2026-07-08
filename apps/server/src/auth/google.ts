@@ -17,13 +17,18 @@ export function makeOAuthClient(): OAuth2Client {
   );
 }
 
-/** URL del consent screen Google. `state` trasporta una nonce anti-CSRF. */
-export function getAuthUrl(state: string): string {
+/**
+ * URL del consent screen Google. `state` trasporta una nonce anti-CSRF.
+ * - login (scope base): niente offline, selezione account → nessun avviso, zero attriti
+ * - connect (scope pieni): offline+consent per il refresh token, incremental auth
+ */
+export function getAuthUrl(state: string, scopes: string[] = GOOGLE_SCOPES, offline = true): string {
   const client = makeOAuthClient();
   return client.generateAuthUrl({
-    access_type: "offline", // necessario per ricevere il refresh_token
-    prompt: "consent", // forza il rilascio del refresh_token anche su login ripetuti
-    scope: GOOGLE_SCOPES,
+    ...(offline
+      ? { access_type: "offline" as const, prompt: "consent" }
+      : { prompt: "select_account" }),
+    scope: scopes,
     state,
     include_granted_scopes: true,
   });

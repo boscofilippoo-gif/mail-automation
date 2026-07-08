@@ -16,6 +16,7 @@ import { getTemplate } from "../pdf/templates/index.js";
 import { generatePdf } from "../pdf/generate.js";
 import { getAuthedClientForUser } from "../auth/google.js";
 import { hydrateMessage } from "../gmail/scan.js";
+import { getMailForUser } from "../jobs/dailyScan.js";
 import { createReplyDraft, fetchReplyMeta } from "../gmail/draft.js";
 import { NeedsReauthError } from "../listino/sheet.js";
 import { generateReplyBody } from "../ai/reply.js";
@@ -220,7 +221,7 @@ documentsRouter.post("/:id/draft", async (req, res) => {
   }
 });
 
-/** Mail originale del documento, letta on-demand da Gmail (mai salvata). */
+/** Mail originale del documento: storage inbound (inoltro) o Gmail on-demand. */
 documentsRouter.get("/:id/source", async (req, res) => {
   const doc = getDocument(req.userId!, Number(req.params.id));
   if (!doc) {
@@ -228,11 +229,60 @@ documentsRouter.get("/:id/source", async (req, res) => {
     return;
   }
   try {
-    const client = getAuthedClientForUser(req.userId!);
-    const mail = await hydrateMessage(client, doc.source_message_id);
+    const { mail } = await getMailForUser(req.userId!, doc.source_message_id);
     res.json({ subject: mail.subject, from: mail.from, date: mail.date, bodyText: mail.bodyText });
   } catch {
-    res.status(404).json({ error: "Mail originale non trovata (eliminata da Gmail?)" });
+    res.status(404).json({ error: "Mail originale non più disponibile." });
+  }
+});
+
+/**
+ * Testo di risposta per la modalità inoltro (niente bozze Gmail):
+ * l'AI scrive la risposta, l'utente la copia o apre il suo client via mailto.
+ */
+documentsRouter.post("/:id/reply-text", async (req, res) => {
+  const doc = getDocument(req.userId!, Number(req.params.id));
+  if (!doc) {
+    res.status(404).json({ error: "Documento non trovato" });
+    return;
+  }
+  try {
+    const data = JSON.parse(doc.extracted_json) as ExtractedDocument;
+    let originalSnippet = "";
+    let sender = data.customer_email ?? "";
+    let subject = "";
+    try {
+      const { mail } = await getMailForUser(req.userId!, doc.source_message_id);
+      originalSnippet = mail.bodyText;
+      subject = mail.subject;
+      // estrai l'indirizzo puro da "Nome <mail>"
+      sender = mail.from.match(/<([^>]+)>/)?.[1] ?? mail.from ?? sender;
+    } catch {
+      /* mail sparita: si risponde comunque coi soli dati del documento */
+    }
+
+    const settings = getUserSettings(req.userId!);
+    let body = await generateReplyBody({
+      customerName: data.customer_name,
+      docType: doc.type,
+      docNumber: data.document_number,
+      total: data.total,
+      currency: data.currency,
+      itemCount: data.line_items.length,
+      missingPriceCount: data.line_items.filter((li) => li.unit_price === null).length,
+      originalSnippet: originalSnippet || subject,
+    });
+    const signature = settings.email_signature ?? settings.company_name;
+    if (signature) body += `\n\n${signature}`;
+
+    res.json({
+      to: sender,
+      subject: `Re: ${subject.replace(/^\s*(re|r)\s*:\s*/i, "") || data.customer_name}`,
+      body,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Errore nella generazione della risposta";
+    res.status(400).json({ error: message });
   }
 });
 

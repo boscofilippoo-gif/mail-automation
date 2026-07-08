@@ -33,6 +33,29 @@ export function getUserById(id: number): User | undefined {
   return db.prepare(`SELECT * FROM users WHERE id = ?`).get(id) as User | undefined;
 }
 
+export function getUserByEmail(email: string): User | undefined {
+  return db
+    .prepare(`SELECT * FROM users WHERE email = ? COLLATE NOCASE`)
+    .get(email.trim()) as User | undefined;
+}
+
+/** Crea (o ritorna) l'utente identificato dalla sola email — signup via magic link. */
+export function upsertEmailUser(email: string): User {
+  const existing = getUserByEmail(email);
+  if (existing) return existing;
+  db.prepare(`INSERT INTO users (google_sub, email) VALUES (NULL, ?)`).run(email.trim());
+  return getUserByEmail(email)!;
+}
+
+/** Collega un account Google a un utente nato via magic link. */
+export function linkGoogleSub(userId: number, googleSub: string): void {
+  db.prepare(`UPDATE users SET google_sub = ? WHERE id = ?`).run(googleSub, userId);
+}
+
+export function setMailMode(userId: number, mode: "gmail" | "inoltro"): void {
+  db.prepare(`UPDATE users SET mail_mode = ? WHERE id = ?`).run(mode, userId);
+}
+
 export function listActiveUserIds(): number[] {
   const rows = db.prepare(`SELECT id FROM users`).all() as { id: number }[];
   return rows.map((r) => r.id);
@@ -289,6 +312,110 @@ export function deletePriceList(userId: number): void {
 export function hasScope(userId: number, scope: string): boolean {
   const t = getTokens(userId);
   return Boolean(t?.scope?.includes(scope));
+}
+
+/* ───────────────────────── Magic link ───────────────────────── */
+
+export function createMagicLink(email: string, tokenHash: string, ttlMinutes = 15): void {
+  db.prepare(
+    `INSERT INTO magic_links (email, token_hash, expires_at)
+     VALUES (?, ?, datetime('now', '+' || ? || ' minutes'))`,
+  ).run(email.trim(), tokenHash, ttlMinutes);
+}
+
+/**
+ * Consumo ATOMICO e single-use del magic link: l'UPDATE riesce solo se il token
+ * esiste, non è mai stato usato e non è scaduto. Ritorna l'email o null.
+ */
+export function consumeMagicLink(tokenHash: string): string | null {
+  const info = db
+    .prepare(
+      `UPDATE magic_links SET used_at = datetime('now')
+       WHERE token_hash = ? AND used_at IS NULL AND expires_at > datetime('now')`,
+    )
+    .run(tokenHash);
+  if (info.changes !== 1) return null;
+  const row = db.prepare(`SELECT email FROM magic_links WHERE token_hash = ?`).get(tokenHash) as
+    | { email: string }
+    | undefined;
+  return row?.email ?? null;
+}
+
+/* ───────────────────────── Indirizzi inbound (inoltro) ───────────────────────── */
+
+function randomAlias(): string {
+  // 8 char base36 non ambigui: unguessable, è la protezione primaria anti-spoofing
+  let s = "";
+  while (s.length < 8) {
+    s += Math.floor(Math.random() * 36).toString(36);
+  }
+  return s;
+}
+
+export function getOrCreateInboundAddress(userId: number): { alias: string; pending_confirmation: string | null } {
+  const row = db
+    .prepare(`SELECT alias, pending_confirmation FROM inbound_addresses WHERE user_id = ?`)
+    .get(userId) as { alias: string; pending_confirmation: string | null } | undefined;
+  if (row) return row;
+  const alias = randomAlias();
+  db.prepare(`INSERT INTO inbound_addresses (user_id, alias) VALUES (?, ?)`).run(userId, alias);
+  return { alias, pending_confirmation: null };
+}
+
+export function regenerateInboundAddress(userId: number): string {
+  const alias = randomAlias();
+  db.prepare(
+    `INSERT INTO inbound_addresses (user_id, alias, pending_confirmation) VALUES (?, ?, NULL)
+     ON CONFLICT(user_id) DO UPDATE SET alias = ?, pending_confirmation = NULL`,
+  ).run(userId, alias, alias);
+  return alias;
+}
+
+export function getUserByAlias(alias: string): number | null {
+  const row = db
+    .prepare(`SELECT user_id FROM inbound_addresses WHERE alias = ?`)
+    .get(alias.toLowerCase()) as { user_id: number } | undefined;
+  return row?.user_id ?? null;
+}
+
+export function setPendingConfirmation(userId: number, value: string | null): void {
+  db.prepare(`UPDATE inbound_addresses SET pending_confirmation = ? WHERE user_id = ?`).run(
+    value,
+    userId,
+  );
+}
+
+/* ───────────────────────── Mail inbound (corpo salvato: non ri-scaricabile) ───────────────────────── */
+
+const INBOUND_BODY_CAP = 100_000;
+const INBOUND_KEEP = 500;
+
+export function insertInboundMail(m: {
+  userId: number;
+  mailId: string;
+  subject: string | null;
+  sender: string | null;
+  date: string | null;
+  bodyText: string;
+}): void {
+  db.prepare(
+    `INSERT INTO inbound_mails (user_id, mail_id, subject, sender, date, body_text)
+     VALUES (@userId, @mailId, @subject, @sender, @date, @bodyText)
+     ON CONFLICT(user_id, mail_id) DO NOTHING`,
+  ).run({ ...m, bodyText: m.bodyText.slice(0, INBOUND_BODY_CAP) });
+  db.prepare(
+    `DELETE FROM inbound_mails WHERE user_id = @userId AND id NOT IN
+       (SELECT id FROM inbound_mails WHERE user_id = @userId ORDER BY id DESC LIMIT ${INBOUND_KEEP})`,
+  ).run({ userId: m.userId });
+}
+
+export function getInboundMail(
+  userId: number,
+  mailId: string,
+): { subject: string | null; sender: string | null; date: string | null; body_text: string | null } | undefined {
+  return db
+    .prepare(`SELECT subject, sender, date, body_text FROM inbound_mails WHERE user_id = ? AND mail_id = ?`)
+    .get(userId, mailId) as ReturnType<typeof getInboundMail>;
 }
 
 /* ───────────────────────── Impostazioni utente ───────────────────────── */

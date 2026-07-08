@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, ChevronDown, ExternalLink, Loader2, Mail, Plus, Send, Trash2 } from "lucide-react";
 
-import { api, gmailUrl, type ExtractedDocument, type LineItem, type SourceMail } from "@/api";
+import { api, gmailUrl, type ExtractedDocument, type LineItem, type Me, type SourceMail } from "@/api";
 import { cn } from "@/lib/utils";
 
 const inputCls =
@@ -30,6 +30,8 @@ function parseNum(v: string): number | null {
 export function EditDocument() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { me } = useOutletContext<{ me: Me | null }>();
+  const inoltro = me?.mailMode === "inoltro";
   const [draft, setDraft] = useState<ExtractedDocument | null>(null);
   const [docType, setDocType] = useState<string>("");
   const [sourceMessageId, setSourceMessageId] = useState<string | null>(null);
@@ -123,14 +125,16 @@ export function EditDocument() {
           </h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            onClick={saveAndDraft}
-            disabled={saving || drafting}
-            className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 font-medium transition-colors hover:border-accent disabled:opacity-60"
-          >
-            {drafting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-            {drafting ? "Preparo la bozza…" : "Salva e prepara risposta"}
-          </button>
+          {!inoltro && (
+            <button
+              onClick={saveAndDraft}
+              disabled={saving || drafting}
+              className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 font-medium transition-colors hover:border-accent disabled:opacity-60"
+            >
+              {drafting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              {drafting ? "Preparo la bozza…" : "Salva e prepara risposta"}
+            </button>
+          )}
           <button
             onClick={save}
             disabled={saving || drafting}
@@ -152,7 +156,7 @@ export function EditDocument() {
 
       <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_420px]">
         <div className="space-y-8">
-          <SourceMailSection docId={Number(id)} sourceMessageId={sourceMessageId} />
+          <SourceMailSection docId={Number(id)} sourceMessageId={sourceMessageId} showGmailLink={!inoltro} />
 
           {/* Cliente */}
           <section>
@@ -261,7 +265,15 @@ export function EditDocument() {
 }
 
 /** Mail originale del cliente: collassabile, caricata da Gmail solo al primo click. */
-function SourceMailSection({ docId, sourceMessageId }: { docId: number; sourceMessageId: string | null }) {
+function SourceMailSection({
+  docId,
+  sourceMessageId,
+  showGmailLink,
+}: {
+  docId: number;
+  sourceMessageId: string | null;
+  showGmailLink: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [mail, setMail] = useState<SourceMail | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
@@ -302,7 +314,7 @@ function SourceMailSection({ docId, sourceMessageId }: { docId: number; sourceMe
             <>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-medium">{mail.subject || "(senza oggetto)"}</p>
-                {sourceMessageId && (
+                {sourceMessageId && showGmailLink && (
                   <a
                     href={gmailUrl(sourceMessageId)}
                     target="_blank"

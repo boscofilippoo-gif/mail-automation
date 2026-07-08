@@ -3,12 +3,16 @@ export type DocType = "fattura" | "preventivo" | "ordine";
 
 export const DOC_TYPES: DocType[] = ["fattura", "preventivo", "ordine"];
 
+/** Come l'utente ha collegato la casella: Gmail diretto, inoltro, o non ancora scelto. */
+export type MailMode = "gmail" | "inoltro";
+
 export interface User {
   id: number;
-  google_sub: string;
+  google_sub: string | null; // null per utenti magic-link non ancora collegati a Google
   email: string;
   display_name: string | null;
   created_at: string;
+  mail_mode: MailMode | null;
 }
 
 export interface Keyword {

@@ -1,8 +1,47 @@
 import { useEffect, useRef, useState } from "react";
+import { Link, useOutletContext } from "react-router-dom";
 import { Check, ImagePlus, Loader2, Trash2 } from "lucide-react";
 
-import { api, type UserSettings } from "@/api";
+import { api, type Me, type UserSettings } from "@/api";
 import { cn } from "@/lib/utils";
+
+/** Stato del collegamento posta: modalità attiva, alias, cambio. */
+function MailboxSection() {
+  const { me } = useOutletContext<{ me: Me | null }>();
+  const [address, setAddress] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (me?.mailMode === "inoltro") {
+      api.getInboundAddress().then((a) => setAddress(a.address)).catch(() => {});
+    }
+  }, [me?.mailMode]);
+
+  return (
+    <section>
+      <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Casella collegata</h2>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-5 text-sm">
+        <div>
+          {me?.mailMode === "gmail" && (
+            <p><strong>Gmail (accesso diretto)</strong> — {me.email}</p>
+          )}
+          {me?.mailMode === "inoltro" && (
+            <>
+              <p><strong>Inoltro automatico</strong></p>
+              <p className="mt-1 font-mono text-xs" style={{ color: "var(--azzurro)" }}>{address ?? "…"}</p>
+            </>
+          )}
+          {!me?.mailMode && <p className="text-muted-foreground">Nessuna casella collegata.</p>}
+        </div>
+        <Link
+          to="/onboarding"
+          className="rounded-full border border-border px-4 py-2 text-xs transition-colors hover:border-accent"
+        >
+          Cambia modalità
+        </Link>
+      </div>
+    </section>
+  );
+}
 
 /* Metadati dei template (specchiano il registry lato server). */
 const TEMPLATES = [
@@ -99,6 +138,7 @@ export function Settings() {
 
       <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_420px]">
         <div className="space-y-10">
+          <MailboxSection />
           <TemplateGallery value={draft.template_id} accent={draft.accent_color} onChange={(id) => patch({ template_id: id })} />
           <AccentPicker value={draft.accent_color} onChange={(c) => patch({ accent_color: c })} />
           <LogoUploader value={draft.logo_data_url} onChange={(l) => patch({ logo_data_url: l })} onError={setError} />

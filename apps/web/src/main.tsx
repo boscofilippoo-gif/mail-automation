@@ -10,6 +10,7 @@ import { Keywords } from "@/pages/Keywords";
 import { Settings } from "@/pages/Settings";
 import { Listino } from "@/pages/Listino";
 import { EditDocument } from "@/pages/EditDocument";
+import { Onboarding } from "@/pages/Onboarding";
 import { PrivacyApp } from "@/pages/legal/Privacy";
 import { TerminiApp } from "@/pages/legal/Termini";
 
@@ -22,6 +23,7 @@ createRoot(document.getElementById("root")!).render(
         <Route path="/termini" element={<TerminiApp />} />
         <Route element={<App />}>
           <Route index element={<Login />} />
+          <Route path="onboarding" element={<Onboarding />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="keywords" element={<Keywords />} />
           <Route path="settings" element={<Settings />} />

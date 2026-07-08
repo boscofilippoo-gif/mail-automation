@@ -1,7 +1,55 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, FileText, Mails, Sparkles } from "lucide-react";
+import { ArrowRight, FileText, Loader2, Mails, Send, Sparkles } from "lucide-react";
 
-import { loginWithGoogle } from "@/api";
+import { api, loginWithGoogle } from "@/api";
+
+/** Login via email (magic link): funziona con qualsiasi provider. */
+function MagicLinkForm() {
+  const [email, setEmail] = useState("");
+  const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setState("sending");
+    try {
+      await api.requestMagicLink(email.trim());
+    } catch {
+      /* risposta uniforme: si mostra comunque "controlla la posta" */
+    }
+    setState("sent");
+  }
+
+  if (state === "sent") {
+    return (
+      <p className="mt-4 max-w-sm rounded-2xl border border-border bg-card px-5 py-4 text-sm leading-relaxed text-muted-foreground">
+        📬 <strong className="text-foreground">Controlla la posta</strong>: se l'indirizzo è
+        corretto ti abbiamo mandato un link di accesso. Vale 15 minuti.
+      </p>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-4 flex w-full max-w-sm items-center gap-2">
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="oppure entra con la tua email…"
+        className="min-w-0 flex-1 rounded-full border border-border bg-card px-5 py-3 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-accent"
+      />
+      <button
+        type="submit"
+        disabled={state === "sending" || !email.trim()}
+        aria-label="Invia link di accesso"
+        className="inline-flex shrink-0 items-center justify-center rounded-full border border-border p-3 transition-colors hover:border-accent disabled:opacity-50"
+      >
+        {state === "sending" ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+      </button>
+    </form>
+  );
+}
 
 export function Login() {
   return (
@@ -30,8 +78,9 @@ export function Login() {
         Accedi con Google
         <ArrowRight className="size-[18px]" />
       </button>
+      <MagicLinkForm />
       <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-        accesso in sola lettura alla tua casella · nessuna mail viene modificata
+        funziona con qualsiasi casella · nessuna mail viene modificata
       </p>
 
       <div className="mt-20 grid w-full max-w-3xl grid-cols-1 gap-4 text-left sm:grid-cols-3">

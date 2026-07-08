@@ -3,14 +3,13 @@ import { Router } from "express";
 import { requireAuth } from "../auth/session.js";
 import {
   countUnprocessed,
+  getMailForUser,
   MANUAL_SCAN_OPTS,
   processSingleMail,
   RANGE_BATCH_BUDGET,
   scanUser,
 } from "../jobs/dailyScan.js";
 import { classifyEmail, CONFIDENCE_THRESHOLD } from "../ai/classify.js";
-import { getAuthedClientForUser } from "../auth/google.js";
-import { hydrateMessage } from "../gmail/scan.js";
 import {
   createScanRun,
   getOrCreateRangeRun,
@@ -114,12 +113,13 @@ scanRouter.post("/processed/:id/retry", async (req, res) => {
   }
 
   try {
-    const client = getAuthedClientForUser(req.userId!);
+    // inbound storage prima, Gmail come fallback (utenti inoltro non hanno token)
     let mail;
+    let client;
     try {
-      mail = await hydrateMessage(client, row.gmail_message_id);
+      ({ mail, client } = await getMailForUser(req.userId!, row.gmail_message_id));
     } catch {
-      res.status(400).json({ error: "Mail non più presente in Gmail: impossibile rianalizzarla." });
+      res.status(400).json({ error: "Mail non più disponibile: impossibile rianalizzarla." });
       return;
     }
 

@@ -141,3 +141,34 @@ serve per testare subito.
 npm run build      # compila server (tsc) e frontend (vite build)
 npm start          # avvia il server compilato (servire apps/web/dist separatamente)
 ```
+
+---
+
+## Modalità inoltro (qualsiasi provider) — setup Brevo
+
+L'app supporta due modi di collegare la posta: **Gmail diretto** (OAuth) e **inoltro**
+(alias personale `xxxx@inbox.borustudio.it`, funziona con Outlook/Aruba/PEC, zero avvisi
+Google). Per attivare l'inoltro in produzione servono questi passi una tantum:
+
+1. **Account Brevo** (free) → Senders & Domains → verifica il dominio `borustudio.it`
+   (record TXT brevo-code + DKIM + DMARC su Register, valori mostrati da Brevo) →
+   verifica il sender `MAIL_FROM` (es. accesso@borustudio.it).
+2. **Verifica subito che l'inbound sia attivo sul piano free**: manda una mail di prova
+   e controlla `GET https://api.brevo.com/v3/inbound/events`.
+3. **Register**: aggiungi 2 record MX per il sottodominio `inbox.borustudio.it`:
+   `inbound1.sendinblue.com` (priorità 10) e `inbound2.sendinblue.com` (20).
+   Gli MX del dominio principale NON si toccano (le email esistenti restano intatte).
+4. **Webhook** (una tantum, via curl):
+   ```bash
+   curl -X POST https://api.brevo.com/v3/webhooks \
+     -H "api-key: $BREVO_API_KEY" -H "Content-Type: application/json" \
+     -d '{"type":"inbound","events":["inboundEmailProcessed"],
+          "url":"https://mail.borustudio.it/api/inbound/brevo/<INBOUND_WEBHOOK_KEY>",
+          "domain":"inbox.borustudio.it"}'
+   ```
+5. **Render → Environment**: `BREVO_API_KEY`, `INBOUND_WEBHOOK_KEY` (32 hex random),
+   `INBOUND_DOMAIN=inbox.borustudio.it`, `MAIL_FROM`, `MAIL_FROM_NAME`.
+
+Senza `BREVO_API_KEY` i magic link vengono stampati nei log del server (mock dev).
+Nota Render free: se il servizio dorme, il primo webhook può andare in timeout — i
+retry di Brevo + l'idempotenza rendono la cosa innocua.

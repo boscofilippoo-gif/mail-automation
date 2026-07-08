@@ -15,7 +15,9 @@ import {
 } from "../gmail/scan.js";
 import {
   createScanRun,
+  getInboundMail,
   getPriceList,
+  getUserById,
   getUserSettings,
   hasScope,
   insertDocument,
@@ -28,6 +30,9 @@ import {
   updateScanRunCounters,
 } from "../repo.js";
 import type { DocType, PriceListItem, UserSettings } from "../types.js";
+
+const GMAIL_READONLY = "https://www.googleapis.com/auth/gmail.readonly";
+type OAuth2Client = ReturnType<typeof getAuthedClientForUser>;
 
 export interface ScanResult {
   scanned: number; // mail elaborate (estrazione tentata) in questo run
@@ -70,7 +75,7 @@ export type SingleMailOutcome =
  */
 export async function processSingleMail(args: {
   userId: number;
-  client: ReturnType<typeof getAuthedClientForUser>;
+  client: OAuth2Client | null; // null in modalità inoltro: nessun accesso Gmail
   mail: CandidateMail;
   docType: DocType;
   matchedKeyword: string;
@@ -119,8 +124,9 @@ export async function processSingleMail(args: {
     });
 
     // ── bozza automatica (opzionale): fallimento tollerato, il documento esiste ──
+    // richiede un client Gmail: in modalità inoltro (client null) si salta
     let draftCreated = false;
-    if (settings.auto_draft && hasScope(userId, DRAFTS_SCOPE)) {
+    if (settings.auto_draft && client && hasScope(userId, DRAFTS_SCOPE)) {
       try {
         const meta = await fetchReplyMeta(client, mail.id);
         let body = await generateReplyBody({
@@ -189,6 +195,15 @@ export async function scanUser(
     draftsCreated: 0,
     remaining: 0,
   };
+  // guard modalità: lo scan Gmail non ha senso (né i token) per gli utenti inoltro
+  const user = getUserById(userId);
+  if (user?.mail_mode === "inoltro") {
+    throw new Error("In modalità inoltro le mail arrivano da sole: non serve scansionare.");
+  }
+  if (!hasScope(userId, GMAIL_READONLY)) {
+    throw new Error("Collega Gmail per usare la scansione (scegli la modalità nella pagina di benvenuto).");
+  }
+
   const settings = getUserSettings(userId);
   const keywords = listActiveKeywords(userId);
   // listino caricato una volta per run: guida i prezzi in estrazione
@@ -331,10 +346,42 @@ export async function countUnprocessed(userId: number, window: ScanWindow): Prom
 }
 
 /** Scan di tutti gli utenti (usato dal cron giornaliero). */
+/**
+ * Recupera una mail per Riprova / "mail originale": prima dallo storage inbound
+ * (modalità inoltro: il contenuto non è ri-scaricabile), poi da Gmail se
+ * l'utente ha i token con lo scope di lettura.
+ */
+export async function getMailForUser(
+  userId: number,
+  mailId: string,
+): Promise<{ mail: CandidateMail; client: OAuth2Client | null }> {
+  const stored = getInboundMail(userId, mailId);
+  if (stored) {
+    return {
+      mail: {
+        id: mailId,
+        subject: stored.subject ?? "",
+        from: stored.sender ?? "",
+        date: stored.date ?? "",
+        bodyText: stored.body_text ?? "",
+      },
+      client: null,
+    };
+  }
+  if (hasScope(userId, GMAIL_READONLY)) {
+    const client = getAuthedClientForUser(userId);
+    return { mail: await hydrateMessage(client, mailId), client };
+  }
+  throw new Error("Mail non più disponibile (contenuto non conservato).");
+}
+
 export async function scanAllUsers(): Promise<void> {
   const ids = listActiveUserIds();
   console.log(`[scan] avvio scan giornaliero per ${ids.length} utenti`);
   for (const id of ids) {
+    // gli utenti inoltro sono push-based: niente scan, niente rumore nei log
+    const u = getUserById(id);
+    if (u?.mail_mode === "inoltro" || !hasScope(id, GMAIL_READONLY)) continue;
     try {
       // run creato PRIMA: le mail elaborate lo riferiscono via scan_run_id
       const runId = createScanRun(id, "giornaliero", null);

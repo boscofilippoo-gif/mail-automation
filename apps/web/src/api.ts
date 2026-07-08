@@ -28,10 +28,14 @@ async function requestText(path: string, init?: RequestInit): Promise<string> {
 
 export type DocType = "fattura" | "preventivo" | "ordine";
 
+export type MailMode = "gmail" | "inoltro";
+
 export interface Me {
   id: number;
   email: string;
   displayName: string | null;
+  mailMode: MailMode | null;
+  hasGmail: boolean;
 }
 
 export interface Keyword {
@@ -187,6 +191,26 @@ export const api = {
   retryProcessed: (id: number) =>
     request<RetryResult>(`/api/scan/processed/${id}/retry`, { method: "POST" }),
   listScanHistory: () => request<ScanRun[]>("/api/scan/history"),
+
+  requestMagicLink: (email: string) =>
+    request<{ ok: true }>("/auth/magic", { method: "POST", body: JSON.stringify({ email }) }),
+  setMailMode: (mode: "inoltro") =>
+    request<{ ok: true }>("/api/me/mail-mode", { method: "POST", body: JSON.stringify({ mode }) }),
+  getInboundAddress: () =>
+    request<{ alias: string; address: string; pendingConfirmation: string | null }>(
+      "/api/inbound/address",
+    ),
+  regenerateInboundAddress: () =>
+    request<{ alias: string; address: string; pendingConfirmation: null }>(
+      "/api/inbound/address/regenerate",
+      { method: "POST" },
+    ),
+  confirmationDone: () =>
+    request<{ ok: true }>("/api/inbound/address/confirmation-done", { method: "POST" }),
+  getReplyText: (id: number) =>
+    request<{ to: string; subject: string; body: string }>(`/api/documents/${id}/reply-text`, {
+      method: "POST",
+    }),
   listRunMails: (runId: number) => request<ProcessedItem[]>(`/api/scan/history/${runId}/mails`),
 
   getSettings: () => request<UserSettings>("/api/settings"),
@@ -231,9 +255,14 @@ export const api = {
     `/api/documents/${id}/pdf${download ? "?download=1" : ""}`,
 };
 
-/** Avvia il flusso OAuth: redirect del browser verso il backend. */
+/** Avvia il login Google (soli dati base: nessun avviso). */
 export function loginWithGoogle() {
   window.location.href = "/auth/google";
+}
+
+/** Avvia il collegamento Gmail completo (modalità diretta, scope pieni). */
+export function connectGmail() {
+  window.location.href = "/auth/google/connect";
 }
 
 /**

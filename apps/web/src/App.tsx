@@ -19,10 +19,16 @@ export function App() {
       .finally(() => setLoading(false));
   }, [location.pathname]);
 
-  // protezione client-side: le pagine interne richiedono sessione
+  // protezione client-side: le pagine interne richiedono sessione;
+  // chi non ha ancora scelto la modalità casella passa dall'onboarding
   useEffect(() => {
     const isProtected = location.pathname !== "/";
-    if (!loading && !me && isProtected) navigate("/", { replace: true });
+    if (loading) return;
+    if (!me && isProtected) {
+      navigate("/", { replace: true });
+    } else if (me && !me.mailMode && isProtected && location.pathname !== "/onboarding") {
+      navigate("/onboarding", { replace: true });
+    }
   }, [loading, me, location.pathname, navigate]);
 
   async function handleLogout() {

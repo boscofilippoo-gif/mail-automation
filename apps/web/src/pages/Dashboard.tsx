@@ -4,6 +4,7 @@ import {
   Calendar,
   Check,
   ChevronDown,
+  Copy,
   Download,
   ExternalLink,
   Eye,
@@ -16,7 +17,9 @@ import {
   Square,
 } from "lucide-react";
 
-import { api, gmailUrl, type DocumentItem, type ProcessedItem, type ScanResult, type ScanRun, type SentStatus } from "@/api";
+import { useOutletContext } from "react-router-dom";
+
+import { api, gmailUrl, type DocumentItem, type Me, type ProcessedItem, type ScanResult, type ScanRun, type SentStatus } from "@/api";
 import { cn } from "@/lib/utils";
 
 const RUN_KIND_LABEL: Record<ScanRun["kind"], string> = {
@@ -64,6 +67,8 @@ const STATUS_BG: Record<SentStatus, string> = {
 };
 
 export function Dashboard() {
+  const { me } = useOutletContext<{ me: Me | null }>();
+  const inoltro = me?.mailMode === "inoltro";
   const [docs, setDocs] = useState<DocumentItem[]>([]);
   const [processed, setProcessed] = useState<ProcessedItem[]>([]);
   const [scanning, setScanning] = useState(false);
@@ -163,28 +168,32 @@ export function Dashboard() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Documenti</h1>
           <p className="mt-2 text-muted-foreground">
-            I PDF generati dalle tue mail. Lo scan gira ogni giorno; puoi anche lanciarlo subito.
+            {inoltro
+              ? "I PDF generati dalle mail che inoltri: arrivano da soli, nessuna scansione necessaria."
+              : "I PDF generati dalle tue mail. Lo scan gira ogni giorno; puoi anche lanciarlo subito."}
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowRange((v) => !v)}
-            disabled={rangePhase === "running"}
-            className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 font-medium transition-colors hover:border-accent disabled:opacity-60"
-          >
-            <Calendar className="size-4" />
-            Periodo…
-          </button>
-          <button
-            onClick={scanNow}
-            disabled={scanning || rangePhase === "running"}
-            className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 font-medium disabled:opacity-60"
-            style={{ background: "var(--azzurro)", color: "var(--nero)" }}
-          >
-            <RefreshCw className={cn("size-4", scanning && "animate-spin")} />
-            {scanning ? "Scansione…" : "Scansiona ora"}
-          </button>
-        </div>
+        {!inoltro && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowRange((v) => !v)}
+              disabled={rangePhase === "running"}
+              className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 font-medium transition-colors hover:border-accent disabled:opacity-60"
+            >
+              <Calendar className="size-4" />
+              Periodo…
+            </button>
+            <button
+              onClick={scanNow}
+              disabled={scanning || rangePhase === "running"}
+              className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 font-medium disabled:opacity-60"
+              style={{ background: "var(--azzurro)", color: "var(--nero)" }}
+            >
+              <RefreshCw className={cn("size-4", scanning && "animate-spin")} />
+              {scanning ? "Scansione…" : "Scansiona ora"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── pannello scan per periodo ── */}
@@ -476,6 +485,7 @@ function ProcessedLog({ processed, onChanged }: { processed: ProcessedItem[]; on
 }
 
 function ProcessedRow({ p, first, onChanged }: { p: ProcessedItem; first: boolean; onChanged: () => void }) {
+  const { me: rowMe } = useOutletContext<{ me: Me | null }>();
   const [open, setOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [retryMsg, setRetryMsg] = useState<string | null>(null);
@@ -554,15 +564,17 @@ function ProcessedRow({ p, first, onChanged }: { p: ProcessedItem; first: boolea
           {p.status === "done" && p.detail && <p className="mt-2 text-muted-foreground">{p.detail}</p>}
 
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            <a
-              href={gmailUrl(p.gmail_message_id)}
-              target="_blank"
-              rel="noopener"
-              className="inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-xs transition-colors hover:border-accent"
-            >
-              <ExternalLink className="size-3.5" />
-              Apri in Gmail
-            </a>
+            {rowMe?.mailMode !== "inoltro" && (
+              <a
+                href={gmailUrl(p.gmail_message_id)}
+                target="_blank"
+                rel="noopener"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-xs transition-colors hover:border-accent"
+              >
+                <ExternalLink className="size-3.5" />
+                Apri in Gmail
+              </a>
+            )}
             {(p.status === "skipped" || p.status === "error") && (
               <button
                 onClick={retry}
@@ -581,6 +593,82 @@ function ProcessedRow({ p, first, onChanged }: { p: ProcessedItem; first: boolea
   );
 }
 
+/** Modal "Genera risposta" (modalità inoltro): testo AI da copiare + mailto. */
+function ReplyModal({ docId, onClose }: { docId: number; onClose: () => void }) {
+  const [reply, setReply] = useState<{ to: string; subject: string; body: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    api.getReplyText(docId).then(setReply).catch((e) => setError(e.message));
+  }, [docId]);
+
+  function copy() {
+    if (!reply) return;
+    void navigator.clipboard.writeText(reply.body).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
+  const mailto = reply
+    ? `mailto:${encodeURIComponent(reply.to)}?subject=${encodeURIComponent(reply.subject)}&body=${encodeURIComponent(reply.body.slice(0, 1800))}`
+    : "#";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-lg rounded-2xl border border-border bg-background p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-semibold">Risposta pronta</h3>
+        {error && <p className="mt-2 text-sm" style={{ color: "var(--rosa)" }}>{error}</p>}
+        {!reply && !error && (
+          <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> L'AI sta scrivendo la risposta…
+          </p>
+        )}
+        {reply && (
+          <>
+            <p className="mt-2 text-xs text-muted-foreground">
+              A: {reply.to || "—"} · Oggetto: {reply.subject}
+            </p>
+            <textarea
+              readOnly
+              value={reply.body}
+              rows={10}
+              className="mt-3 w-full rounded-xl border border-border bg-card p-3 text-sm leading-relaxed text-foreground outline-none"
+            />
+            <p className="mt-2 text-xs text-muted-foreground">
+              💡 Ricordati di <strong>allegare il PDF</strong> (bottone Scarica sulla card).
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={copy}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium"
+                style={{ background: "var(--azzurro)", color: "var(--nero)" }}
+              >
+                {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                {copied ? "Copiato" : "Copia testo"}
+              </button>
+              <a
+                href={mailto}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border py-2 text-sm transition-colors hover:border-accent"
+              >
+                <Send className="size-4" />
+                Apri nel client email
+              </a>
+            </div>
+          </>
+        )}
+        <button onClick={onClose} className="mt-3 w-full py-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
+          Chiudi
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DocCard({
   doc,
   onChanged,
@@ -590,9 +678,12 @@ function DocCard({
   onChanged: () => void;
   onNeedsReauth: () => void;
 }) {
+  const { me: cardMe } = useOutletContext<{ me: Me | null }>();
+  const inoltro = cardMe?.mailMode === "inoltro";
   const d = doc.data;
   const [drafting, setDrafting] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
+  const [replyOpen, setReplyOpen] = useState(false);
   const accent = doc.type === "fattura" ? "var(--azzurro)" : "var(--rosa)";
   const fmt = (n: number | null) =>
     n === null
@@ -638,15 +729,17 @@ function DocCard({
         </div>
         <span className="inline-flex items-center gap-2 font-mono text-xs text-muted-foreground/70">
           {new Date(doc.createdAt + "Z").toLocaleDateString("it-IT")}
-          <a
-            href={gmailUrl(doc.sourceMessageId)}
-            target="_blank"
-            rel="noopener"
-            title="Apri la mail originale in Gmail"
-            className="transition-colors hover:text-foreground"
-          >
-            <ExternalLink className="size-3.5" />
-          </a>
+          {!inoltro && (
+            <a
+              href={gmailUrl(doc.sourceMessageId)}
+              target="_blank"
+              rel="noopener"
+              title="Apri la mail originale in Gmail"
+              className="transition-colors hover:text-foreground"
+            >
+              <ExternalLink className="size-3.5" />
+            </a>
+          )}
         </span>
       </div>
       <h3 className="mt-4 truncate text-lg font-semibold">{d.customer_name || "Cliente non rilevato"}</h3>
@@ -655,15 +748,27 @@ function DocCard({
       </p>
       {cardError && <p className="mt-2 text-xs" style={{ color: "var(--rosa)" }}>{cardError}</p>}
 
-      <button
-        onClick={prepareDraft}
-        disabled={drafting}
-        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium disabled:opacity-60"
-        style={{ background: "var(--azzurro)", color: "var(--nero)" }}
-      >
-        {drafting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-        {drafting ? "Preparo la bozza…" : "Prepara risposta"}
-      </button>
+      {inoltro ? (
+        <button
+          onClick={() => setReplyOpen(true)}
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium"
+          style={{ background: "var(--azzurro)", color: "var(--nero)" }}
+        >
+          <Send className="size-4" />
+          Genera risposta
+        </button>
+      ) : (
+        <button
+          onClick={prepareDraft}
+          disabled={drafting}
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium disabled:opacity-60"
+          style={{ background: "var(--azzurro)", color: "var(--nero)" }}
+        >
+          {drafting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+          {drafting ? "Preparo la bozza…" : "Prepara risposta"}
+        </button>
+      )}
+      {replyOpen && <ReplyModal docId={doc.id} onClose={() => setReplyOpen(false)} />}
       {doc.sentStatus !== "inviato" && (
         <button
           onClick={markSent}

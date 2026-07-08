@@ -16,6 +16,7 @@ import { documentsRouter } from "./routes/documents.js";
 import { scanRouter } from "./routes/scan.js";
 import { settingsRouter } from "./routes/settings.js";
 import { listinoRouter } from "./routes/listino.js";
+import { inboundRouter } from "./routes/inbound.js";
 import { scanAllUsers } from "./jobs/dailyScan.js";
 import { closePdfBrowser } from "./pdf/generate.js";
 
@@ -34,6 +35,9 @@ app.use(
 // listino: i PDF in base64 superano il limite globale → parser dedicato da 15mb,
 // montato PRIMA del parser globale (body-parser salta i body già letti)
 app.use("/api/listino", express.json({ limit: "15mb" }), listinoRouter);
+// inbound: il webhook Brevo usa un parser dedicato (definito nel router) — mount
+// PRIMA del json globale così i payload grandi non vengono respinti a 2mb
+app.use("/api/inbound", inboundRouter);
 // limit 2mb: il logo in base64 (fino a ~700k caratteri) supera il default di 100KB
 app.use(express.json({ limit: "2mb" }));
 
