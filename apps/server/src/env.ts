@@ -27,11 +27,10 @@ function optional(name: string, fallback: string): string {
 
 const isProd = process.env.NODE_ENV === "production";
 
-// Render espone automaticamente l'URL pubblico del servizio in RENDER_EXTERNAL_URL
-// (es. https://mail-automation-xxxx.onrender.com). Quando c'è, lo usiamo come
-// origine del sito e per costruire il redirect URI OAuth: così non serve
-// inserirli a mano dopo aver scoperto il dominio.
-const publicUrl = (process.env.RENDER_EXTERNAL_URL ?? "").replace(/\/$/, "");
+// URL pubblico del servizio, usato come origine del sito e per il redirect OAuth.
+// Priorità: PUBLIC_URL esplicito (dominio personalizzato, es. https://app.tuodominio.it)
+// → RENDER_EXTERNAL_URL (auto su Render, es. https://xxx.onrender.com) → localhost.
+const publicUrl = (process.env.PUBLIC_URL ?? process.env.RENDER_EXTERNAL_URL ?? "").replace(/\/$/, "");
 
 export const env = {
   isProd,
