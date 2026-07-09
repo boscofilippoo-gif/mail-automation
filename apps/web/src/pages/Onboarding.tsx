@@ -101,7 +101,12 @@ export function Onboarding() {
             </>
           ) : (
             <p className="text-muted-foreground">
-              In attesa del codice di conferma… (se configuri Gmail, il codice apparirà qui da solo)
+              <strong className="text-foreground">Inoltri da Gmail?</strong> Google ti chiederà un
+              codice di conferma: apparirà qui automaticamente, senza cercarlo.{" "}
+              <span className="opacity-80">
+                Con gli altri provider (Outlook, Aruba, Register, PEC…) non serve nessun codice:
+                attivi l'inoltro e sei a posto.
+              </span>
             </p>
           )}
         </div>
