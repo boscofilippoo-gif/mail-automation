@@ -94,6 +94,24 @@ export function Dashboard() {
   }
   useEffect(reload, []);
 
+  // auto-refresh: polling ogni 15s SOLO a scheda visibile + refresh immediato
+  // quando l'utente torna sul tab (le mail inoltrate arrivano da sole: la
+  // dashboard deve mostrarle senza F5)
+  useEffect(() => {
+    const iv = setInterval(() => {
+      if (document.visibilityState === "visible") reload();
+    }, 15_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function scanNow() {
     setScanning(true);
     setError(null);
