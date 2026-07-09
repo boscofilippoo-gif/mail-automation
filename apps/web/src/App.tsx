@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { LogOut, Mails } from "lucide-react";
 
@@ -11,13 +11,23 @@ export function App() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  /** Ricarica il profilo: le pagine lo chiamano dopo azioni che cambiano lo
+   *  stato lato server (es. scelta modalità), così il guard di navigazione
+   *  non ragiona su dati stantii. */
+  const refreshMe = useCallback(async (): Promise<Me | null> => {
+    try {
+      const m = await api.me();
+      setMe(m);
+      return m;
+    } catch {
+      setMe(null);
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
-    api
-      .me()
-      .then(setMe)
-      .catch(() => setMe(null))
-      .finally(() => setLoading(false));
-  }, [location.pathname]);
+    void refreshMe().finally(() => setLoading(false));
+  }, [location.pathname, refreshMe]);
 
   // protezione client-side: le pagine interne richiedono sessione;
   // chi non ha ancora scelto la modalità casella passa dall'onboarding
@@ -65,7 +75,7 @@ export function App() {
         </header>
       )}
       <main className="mx-auto max-w-5xl px-6 py-10">
-        <Outlet context={{ me }} />
+        <Outlet context={{ me, refreshMe }} />
       </main>
     </div>
   );

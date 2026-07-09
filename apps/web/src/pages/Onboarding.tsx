@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { ArrowRight, Check, Copy, Forward, Mail, ShieldCheck } from "lucide-react";
 
-import { api, connectGmail } from "@/api";
+import { api, connectGmail, type Me } from "@/api";
 import { cn } from "@/lib/utils";
 
 /**
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
  */
 export function Onboarding() {
   const navigate = useNavigate();
+  const { refreshMe } = useOutletContext<{ me: Me | null; refreshMe: () => Promise<Me | null> }>();
   const [params] = useSearchParams();
   const [step, setStep] = useState<"choose" | "inoltro">("choose");
   const [address, setAddress] = useState<string | null>(null);
@@ -28,6 +29,9 @@ export function Onboarding() {
     setError(null);
     try {
       await api.setMailMode("inoltro");
+      // aggiorna SUBITO il profilo in App: senza, il guard di navigazione vede
+      // ancora mailMode null e "Vai alla dashboard" rimbalza sull'onboarding
+      await refreshMe();
       const a = await api.getInboundAddress();
       setAddress(a.address);
       setPending(a.pendingConfirmation);
