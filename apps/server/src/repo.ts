@@ -479,6 +479,39 @@ export function upsertUserSettings(userId: number, patch: Partial<UserSettings>)
   return merged;
 }
 
+/**
+ * HTML del template su misura. Vive FUORI da UserSettings: è grande (~150KB)
+ * e upsertUserSettings ha parametri nominali fissi — un campo extra farebbe throw.
+ */
+export function getCustomTemplateHtml(userId: number): string | null {
+  const row = db
+    .prepare(`SELECT custom_template_html FROM user_settings WHERE user_id = ?`)
+    .get(userId) as { custom_template_html: string | null } | undefined;
+  return row?.custom_template_html ?? null;
+}
+
+export function setCustomTemplateHtml(userId: number, html: string | null): void {
+  if (html !== null) {
+    // INSERT per utenti che non hanno ancora la riga (le altre colonne hanno default DDL)
+    db.prepare(
+      `INSERT INTO user_settings (user_id, custom_template_html, template_id)
+       VALUES (?, ?, 'custom')
+       ON CONFLICT(user_id) DO UPDATE SET
+         custom_template_html = excluded.custom_template_html,
+         template_id = 'custom',
+         updated_at = datetime('now')`,
+    ).run(userId, html);
+  } else {
+    db.prepare(
+      `UPDATE user_settings SET
+         custom_template_html = NULL,
+         template_id = CASE WHEN template_id = 'custom' THEN 'classic' ELSE template_id END,
+         updated_at = datetime('now')
+       WHERE user_id = ?`,
+    ).run(userId);
+  }
+}
+
 /* ───────────────────────── Storico scansioni ───────────────────────── */
 
 interface ScanCounters {

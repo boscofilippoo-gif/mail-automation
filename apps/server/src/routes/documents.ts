@@ -4,6 +4,7 @@ import { Router } from "express";
 
 import { requireAuth } from "../auth/session.js";
 import {
+  getCustomTemplateHtml,
   getDocument,
   getUserSettings,
   hasScope,
@@ -12,7 +13,7 @@ import {
   updateDocument,
   updateDocumentStatus,
 } from "../repo.js";
-import { getTemplate } from "../pdf/templates/index.js";
+import { renderDocument } from "../pdf/render.js";
 import { generatePdf } from "../pdf/generate.js";
 import { getAuthedClientForUser } from "../auth/google.js";
 import { hydrateMessage } from "../gmail/scan.js";
@@ -125,7 +126,7 @@ documentsRouter.post("/preview", (req, res) => {
     const data = (req.body as { data?: unknown }).data ?? req.body;
     const doc = validateDocument(data);
     const settings = getUserSettings(req.userId!);
-    res.type("html").send(getTemplate(settings.template_id).render(doc, settings));
+    res.type("html").send(renderDocument(doc, settings, getCustomTemplateHtml(req.userId!)));
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Anteprima non disponibile" });
   }
@@ -172,7 +173,7 @@ documentsRouter.post("/:id/draft", async (req, res) => {
     // il PDF può essere sparito (disco effimero su Render): rigeneralo e persisti
     let pdfPath = doc.pdf_path;
     if (!fs.existsSync(pdfPath)) {
-      pdfPath = await generatePdf(data, settings);
+      pdfPath = await generatePdf(data, settings, getCustomTemplateHtml(req.userId!));
       updateDocument(req.userId!, doc.id, doc.extracted_json, pdfPath);
     }
 
@@ -316,7 +317,7 @@ documentsRouter.put("/:id", async (req, res) => {
     doc.doc_type = stored.type;
 
     const settings = getUserSettings(req.userId!);
-    const newPdfPath = await generatePdf(doc, settings);
+    const newPdfPath = await generatePdf(doc, settings, getCustomTemplateHtml(req.userId!));
 
     // il vecchio PDF può non esistere (disco effimero su Render free): ignora ENOENT
     fs.unlink(stored.pdf_path, () => {});

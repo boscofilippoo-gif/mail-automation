@@ -6,7 +6,7 @@ import type { Browser } from "puppeteer";
 
 import { PDF_DIR } from "../db.js";
 import { DEFAULT_SETTINGS, type ExtractedDocument, type TemplateSettings } from "../types.js";
-import { getTemplate } from "./templates/index.js";
+import { renderDocument } from "./render.js";
 
 // Riusiamo una sola istanza del browser tra una generazione e l'altra (lazy).
 let browserPromise: Promise<Browser> | null = null;
@@ -37,8 +37,9 @@ export async function closePdfBrowser(): Promise<void> {
 export async function generatePdf(
   doc: ExtractedDocument,
   settings: TemplateSettings = DEFAULT_SETTINGS,
+  customHtml: string | null = null,
 ): Promise<string> {
-  const html = getTemplate(settings.template_id).render(doc, settings);
+  const html = renderDocument(doc, settings, customHtml);
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {

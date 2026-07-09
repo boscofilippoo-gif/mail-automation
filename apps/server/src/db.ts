@@ -189,6 +189,8 @@ export function migrate(): void {
   ensureColumn("price_lists", "api_config_enc", "api_config_enc TEXT"); // config connettore API, cifrata
   ensureColumn("processed", "category", "category TEXT");
   ensureColumn("processed", "detail", "detail TEXT");
+  // template su misura generato dall'AI (HTML con placeholder, ~150KB max)
+  ensureColumn("user_settings", "custom_template_html", "custom_template_html TEXT");
 
   // ── login universale / doppia modalità casella ──
   rebuildUsersIfNeeded(); // google_sub nullable su DB pre-esistenti

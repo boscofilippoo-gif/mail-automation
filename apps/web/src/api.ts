@@ -164,6 +164,18 @@ export interface UserSettings {
   smart_scan: number;
   email_signature: string | null;
   auto_draft: number;
+  has_custom_template?: boolean;
+}
+
+export interface StyleProposal {
+  accent_color: string | null;
+  company_name: string | null;
+  company_address: string | null;
+  company_vat: string | null;
+  company_email: string | null;
+  company_phone: string | null;
+  footer_note: string | null;
+  template_id: string;
 }
 
 export const api = {
@@ -218,6 +230,23 @@ export const api = {
     request<UserSettings>("/api/settings", { method: "PUT", body: JSON.stringify(s) }),
   previewSettings: (s: Partial<UserSettings>) =>
     requestText("/api/settings/preview", { method: "POST", body: JSON.stringify(s) }),
+  analyzeStylePdf: (data: string) =>
+    request<StyleProposal>("/api/settings/analyze-pdf", {
+      method: "POST",
+      body: JSON.stringify({ data }),
+    }),
+  generateTemplate: (data: string, instructions?: string, settings?: Partial<UserSettings>) =>
+    request<{ html: string; preview: string }>("/api/settings/generate-template", {
+      method: "POST",
+      body: JSON.stringify({ data, instructions, settings }),
+    }),
+  saveCustomTemplate: (html: string) =>
+    request<UserSettings>("/api/settings/custom-template", {
+      method: "POST",
+      body: JSON.stringify({ html }),
+    }),
+  deleteCustomTemplate: () =>
+    request<UserSettings>("/api/settings/custom-template", { method: "DELETE" }),
 
   getListino: () => request<ListinoState>("/api/listino"),
   connectSheet: (url: string) =>

@@ -32,9 +32,10 @@ app.use(
     credentials: true, // necessario per inviare il cookie di sessione (utile in dev cross-origin)
   }),
 );
-// listino: i PDF in base64 superano il limite globale → parser dedicato da 15mb,
-// montato PRIMA del parser globale (body-parser salta i body già letti)
+// listino e settings: i PDF in base64 superano il limite globale → parser
+// dedicato da 15mb, montato PRIMA del parser globale (body-parser salta i body già letti)
 app.use("/api/listino", express.json({ limit: "15mb" }), listinoRouter);
+app.use("/api/settings", express.json({ limit: "15mb" }), settingsRouter);
 // inbound: il webhook Brevo usa un parser dedicato (definito nel router) — mount
 // PRIMA del json globale così i payload grandi non vengono respinti a 2mb
 app.use("/api/inbound", inboundRouter);
@@ -48,7 +49,6 @@ app.use("/api/me", meRouter);
 app.use("/api/keywords", keywordsRouter);
 app.use("/api/documents", documentsRouter);
 app.use("/api/scan", scanRouter);
-app.use("/api/settings", settingsRouter);
 
 // ── In produzione il server serve anche il frontend buildato (single service) ──
 // Il build del frontend finisce in apps/web/dist; da dist/index.js del server

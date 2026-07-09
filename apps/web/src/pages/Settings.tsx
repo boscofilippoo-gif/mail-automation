@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
-import { Check, ImagePlus, Loader2, Trash2 } from "lucide-react";
+import { Check, FileUp, ImagePlus, Loader2, Sparkles, Trash2, Wand2 } from "lucide-react";
 
-import { api, type Me, type UserSettings } from "@/api";
+import { api, type Me, type StyleProposal, type UserSettings } from "@/api";
 import { cn } from "@/lib/utils";
 
 /** Stato del collegamento posta: modalità attiva, alias, cambio. */
@@ -139,7 +139,13 @@ export function Settings() {
       <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_420px]">
         <div className="space-y-10">
           <MailboxSection />
-          <TemplateGallery value={draft.template_id} accent={draft.accent_color} onChange={(id) => patch({ template_id: id })} />
+          <TemplateGallery
+            value={draft.template_id}
+            accent={draft.accent_color}
+            hasCustom={Boolean(draft.has_custom_template)}
+            onChange={(id) => patch({ template_id: id })}
+          />
+          <CustomTemplateSection draft={draft} onPatch={patch} onError={setError} />
           <AccentPicker value={draft.accent_color} onChange={(c) => patch({ accent_color: c })} />
           <LogoUploader value={draft.logo_data_url} onChange={(l) => patch({ logo_data_url: l })} onError={setError} />
           <CompanyForm draft={draft} onPatch={patch} />
@@ -223,10 +229,12 @@ function Thumb({ id, accent }: { id: string; accent: string }) {
 function TemplateGallery({
   value,
   accent,
+  hasCustom,
   onChange,
 }: {
   value: string;
   accent: string | null;
+  hasCustom: boolean;
   onChange: (id: string) => void;
 }) {
   const previewAccent = accent ?? "#ef95b4";
@@ -248,6 +256,235 @@ function TemplateGallery({
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t.description}</p>
           </button>
         ))}
+        {hasCustom && (
+          <button
+            onClick={() => onChange("custom")}
+            className={cn(
+              "rounded-2xl border p-3 text-left transition-colors",
+              value === "custom" ? "border-accent bg-foreground/5" : "border-border hover:border-accent/40",
+            )}
+          >
+            <div className="flex h-28 w-full items-center justify-center rounded-md bg-[#fcfaf6]">
+              <Sparkles className="size-8" style={{ color: previewAccent }} />
+            </div>
+            <p className="mt-3 text-sm font-semibold">Personalizzato</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              Ricreato dal tuo PDF di esempio.
+            </p>
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Template su misura ───────────────────────── */
+
+/** Legge un PDF come data URL base64. */
+function fileToPdfDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (file.size > 10 * 1024 * 1024) {
+      reject(new Error("PDF troppo grande (max 10MB): basta un esempio di 1-2 pagine."));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Impossibile leggere il file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function CustomTemplateSection({
+  draft,
+  onPatch,
+  onError,
+}: {
+  draft: UserSettings;
+  onPatch: (p: Partial<UserSettings>) => void;
+  onError: (e: string | null) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [pdf, setPdf] = useState<{ name: string; data: string } | null>(null);
+  const [busy, setBusy] = useState<"style" | "layout" | "save" | null>(null);
+  const [generated, setGenerated] = useState<{ html: string; preview: string } | null>(null);
+  const [instructions, setInstructions] = useState("");
+  const [applied, setApplied] = useState(false);
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    onError(null);
+    setApplied(false);
+    try {
+      setPdf({ name: file.name, data: await fileToPdfDataUrl(file) });
+      setGenerated(null);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Errore nel caricamento del PDF");
+    }
+  }
+
+  /** Step A: estrae lo stile e lo applica alla bozza (si salva col normale Salva). */
+  async function applyStyle() {
+    if (!pdf) return;
+    setBusy("style");
+    onError(null);
+    setApplied(false);
+    try {
+      const p: StyleProposal = await api.analyzeStylePdf(pdf.data);
+      const patch: Partial<UserSettings> = { template_id: p.template_id };
+      if (p.accent_color) patch.accent_color = p.accent_color;
+      if (p.company_name) patch.company_name = p.company_name;
+      if (p.company_address) patch.company_address = p.company_address;
+      if (p.company_vat) patch.company_vat = p.company_vat;
+      if (p.company_email) patch.company_email = p.company_email;
+      if (p.company_phone) patch.company_phone = p.company_phone;
+      if (p.footer_note) patch.footer_note = p.footer_note;
+      onPatch(patch);
+      setApplied(true);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Analisi non riuscita");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Step B: genera il template su misura (anteprima, poi approvazione esplicita). */
+  async function generateLayout() {
+    if (!pdf) return;
+    setBusy("layout");
+    onError(null);
+    try {
+      // passa anche la bozza: l'anteprima esce già con colore/dati appena applicati
+      setGenerated(await api.generateTemplate(pdf.data, instructions.trim() || undefined, draft));
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Generazione non riuscita");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function approve() {
+    if (!generated) return;
+    setBusy("save");
+    onError(null);
+    try {
+      await api.saveCustomTemplate(generated.html);
+      // il server ha già salvato e attivato: allinea la bozza senza perdere
+      // le altre modifiche non ancora salvate
+      onPatch({ template_id: "custom", has_custom_template: true });
+      setGenerated(null);
+      setPdf(null);
+      setInstructions("");
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Salvataggio non riuscito");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeCustom() {
+    setBusy("save");
+    onError(null);
+    try {
+      await api.deleteCustomTemplate();
+      onPatch({
+        has_custom_template: false,
+        template_id: draft.template_id === "custom" ? "classic" : draft.template_id,
+      });
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Rimozione non riuscita");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const btnCls =
+    "inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm transition-colors hover:border-accent disabled:opacity-50";
+
+  return (
+    <section>
+      <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">
+        Il tuo template su misura
+      </h2>
+      <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+        Carica un tuo preventivo o una tua fattura in PDF: l'AI può copiarne lo stile nelle
+        impostazioni qui sopra, oppure ricreare l'intero layout come template personale.
+      </p>
+
+      <div className="mt-4 space-y-4 rounded-2xl border border-border bg-card p-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={() => inputRef.current?.click()} className={btnCls} disabled={busy !== null}>
+            <FileUp className="size-4" />
+            {pdf ? pdf.name : "Carica PDF di esempio"}
+          </button>
+          <input ref={inputRef} type="file" accept="application/pdf" onChange={onFile} className="hidden" />
+
+          {pdf && (
+            <>
+              <button onClick={applyStyle} className={btnCls} disabled={busy !== null}>
+                {busy === "style" ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                Applica il mio stile
+              </button>
+              <button onClick={generateLayout} className={btnCls} disabled={busy !== null}>
+                {busy === "layout" ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
+                {generated ? "Rigenera il layout" : "Ricrea il mio layout"}
+              </button>
+            </>
+          )}
+
+          {draft.has_custom_template && (
+            <button onClick={removeCustom} className={cn(btnCls, "ml-auto")} disabled={busy !== null}>
+              <Trash2 className="size-4" />
+              Rimuovi template personale
+            </button>
+          )}
+        </div>
+
+        {applied && (
+          <p className="text-sm" style={{ color: "var(--azzurro)" }}>
+            Stile applicato alle impostazioni: controlla l'anteprima e premi Salva per confermare.
+          </p>
+        )}
+
+        {busy === "layout" && (
+          <p className="text-sm text-muted-foreground">
+            L'AI sta studiando il tuo documento e ricostruendo il layout: ci vuole circa un minuto…
+          </p>
+        )}
+
+        {generated && (
+          <div className="space-y-3">
+            <div className="aspect-[210/297] w-full max-w-sm overflow-hidden rounded-xl border border-border bg-white">
+              <iframe
+                sandbox=""
+                srcDoc={generated.preview}
+                title="Anteprima template personalizzato"
+                className="h-full w-full border-0"
+              />
+            </div>
+            <input
+              className={inputCls}
+              placeholder="Ritocchi? Es: intestazione più compatta, totale più grande… (poi Rigenera)"
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+            />
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={approve}
+                disabled={busy !== null}
+                className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium disabled:opacity-60"
+                style={{ background: "var(--azzurro)", color: "var(--nero)" }}
+              >
+                {busy === "save" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                Usa questo template
+              </button>
+              <button onClick={() => setGenerated(null)} className={btnCls} disabled={busy !== null}>
+                Scarta
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

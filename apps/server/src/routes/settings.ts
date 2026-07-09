@@ -1,9 +1,17 @@
 import { Router } from "express";
 
 import { requireAuth } from "../auth/session.js";
-import { getUserSettings, upsertUserSettings } from "../repo.js";
-import { getTemplate, TEMPLATES } from "../pdf/templates/index.js";
+import {
+  getCustomTemplateHtml,
+  getUserSettings,
+  setCustomTemplateHtml,
+  upsertUserSettings,
+} from "../repo.js";
+import { TEMPLATES } from "../pdf/templates/index.js";
+import { renderCustom, validateCustomTemplate } from "../pdf/templates/custom.js";
+import { renderDocument } from "../pdf/render.js";
 import { SAMPLE_DOCUMENT } from "../pdf/sample.js";
+import { analyzeStyleFromPdf, generateTemplateFromPdf } from "../ai/customTemplate.js";
 import { DEFAULT_SETTINGS, type UserSettings } from "../types.js";
 
 export const settingsRouter = Router();
@@ -29,13 +37,18 @@ const TEXT_CAPS: Record<string, number> = {
  * Valida e normalizza un body parziale di impostazioni.
  * Ritorna solo i campi presenti e validi; lancia con messaggio chiaro sugli invalidi.
  */
-function validateSettings(body: Record<string, unknown>): Partial<UserSettings> {
+function validateSettings(body: Record<string, unknown>, allowCustom = false): Partial<UserSettings> {
   const out: Partial<UserSettings> = {};
 
   if ("template_id" in body) {
     const id = String(body.template_id ?? "");
-    if (!TEMPLATES.some((t) => t.id === id)) {
-      throw new Error(`Template sconosciuto: "${id}".`);
+    const known = TEMPLATES.some((t) => t.id === id) || (allowCustom && id === "custom");
+    if (!known) {
+      throw new Error(
+        id === "custom"
+          ? "Nessun template personalizzato salvato: crealo prima da un PDF di esempio."
+          : `Template sconosciuto: "${id}".`,
+      );
     }
     out.template_id = id;
   }
@@ -80,16 +93,26 @@ function validateSettings(body: Record<string, unknown>): Partial<UserSettings> 
   return out;
 }
 
+/** true se l'utente ha un template su misura salvato. */
+function hasCustom(userId: number): boolean {
+  return getCustomTemplateHtml(userId) !== null;
+}
+
 /** Impostazioni correnti dell'utente (default se mai salvate). */
 settingsRouter.get("/", (req, res) => {
-  res.json(getUserSettings(req.userId!));
+  res.json({ ...getUserSettings(req.userId!), has_custom_template: hasCustom(req.userId!) });
 });
 
-/** Salva (merge) le impostazioni. Body: Partial<UserSettings>. */
+/**
+ * Salva (merge) le impostazioni. Body: Partial<UserSettings>.
+ * NB: la risposta DEVE includere has_custom_template — il frontend fa
+ * setDraft(risposta) e senza flag la card "Personalizzato" sparirebbe.
+ */
 settingsRouter.put("/", (req, res) => {
   try {
-    const patch = validateSettings(req.body as Record<string, unknown>);
-    res.json(upsertUserSettings(req.userId!, patch));
+    const allowCustom = hasCustom(req.userId!);
+    const patch = validateSettings(req.body as Record<string, unknown>, allowCustom);
+    res.json({ ...upsertUserSettings(req.userId!, patch), has_custom_template: allowCustom });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Impostazioni non valide" });
   }
@@ -102,11 +125,105 @@ settingsRouter.put("/", (req, res) => {
  */
 settingsRouter.post("/preview", (req, res) => {
   try {
-    const patch = validateSettings(req.body as Record<string, unknown>);
+    const customHtml = getCustomTemplateHtml(req.userId!);
+    const patch = validateSettings(req.body as Record<string, unknown>, customHtml !== null);
     const merged: UserSettings = { ...DEFAULT_SETTINGS, ...getUserSettings(req.userId!), ...patch };
-    const html = getTemplate(merged.template_id).render(SAMPLE_DOCUMENT, merged);
-    res.type("html").send(html);
+    // la bozza non trasporta l'html: se sceglie 'custom' si usa quello salvato
+    res.type("html").send(renderDocument(SAMPLE_DOCUMENT, merged, customHtml));
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Anteprima non disponibile" });
   }
+});
+
+/* ───────────────── Template su misura da PDF di esempio ───────────────── */
+
+const MAX_PDF_BYTES = 10 * 1024 * 1024;
+
+/** Estrae e controlla il PDF base64 dal body; lancia con messaggio chiaro. */
+function pdfFromBody(body: unknown): string {
+  const data = (body as { data?: unknown }).data;
+  if (typeof data !== "string" || !data) {
+    throw new Error("Serve il PDF di esempio in base64 nel campo 'data'.");
+  }
+  const payload = data.replace(/^data:[^;]+;base64,/, "");
+  if (Buffer.byteLength(payload, "base64") > MAX_PDF_BYTES) {
+    throw new Error("PDF troppo grande (max 10MB): basta un esempio di 1-2 pagine.");
+  }
+  return data;
+}
+
+/**
+ * Step A "Applica il mio stile": estrae colore, dati azienda, footer e template
+ * base più simile. Non salva nulla: il frontend applica i valori alla bozza.
+ */
+settingsRouter.post("/analyze-pdf", async (req, res) => {
+  try {
+    res.json(await analyzeStyleFromPdf(pdfFromBody(req.body)));
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Analisi non riuscita" });
+  }
+});
+
+/**
+ * Step B "Ricrea il mio layout": genera il template su misura e lo rende in
+ * anteprima col documento campione. NON salva: l'utente deve approvare.
+ */
+settingsRouter.post("/generate-template", async (req, res) => {
+  try {
+    const data = pdfFromBody(req.body);
+    const body = req.body as { instructions?: unknown; settings?: unknown };
+    const instructions = typeof body.instructions === "string" ? body.instructions : undefined;
+
+    const html = await generateTemplateFromPdf(data, instructions);
+    const errors = validateCustomTemplate(html);
+    if (errors.length > 0) {
+      res.status(422).json({
+        error: `Il template generato non ha passato i controlli: ${errors.join(" ")} Riprova (spesso al secondo tentativo riesce).`,
+      });
+      return;
+    }
+    // l'anteprima usa la BOZZA del frontend (colore/dati appena applicati con lo
+    // Step A, magari non ancora salvati), merge sulle impostazioni salvate
+    let patch: Partial<UserSettings> = {};
+    if (body.settings && typeof body.settings === "object") {
+      try {
+        patch = validateSettings(body.settings as Record<string, unknown>, true);
+      } catch {
+        patch = {}; // bozza invalida → anteprima con le impostazioni salvate
+      }
+    }
+    delete patch.template_id; // qui si renderizza SEMPRE il template generato
+    const settings: UserSettings = { ...DEFAULT_SETTINGS, ...getUserSettings(req.userId!), ...patch };
+    // test-render col campione: se esplode qui, meglio ora che sui documenti veri
+    const preview = renderCustom(html, SAMPLE_DOCUMENT, settings);
+    res.json({ html, preview });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Generazione non riuscita" });
+  }
+});
+
+/** Approvazione: salva il template generato e lo attiva (template_id='custom'). */
+settingsRouter.post("/custom-template", (req, res) => {
+  try {
+    const html = (req.body as { html?: unknown }).html;
+    if (typeof html !== "string" || !html.trim()) {
+      throw new Error("Template mancante.");
+    }
+    // rivalidazione completa: il client non è una fonte fidata
+    const errors = validateCustomTemplate(html);
+    if (errors.length > 0) {
+      throw new Error(`Template non valido: ${errors.join(" ")}`);
+    }
+    renderCustom(html, SAMPLE_DOCUMENT, getUserSettings(req.userId!)); // test-render
+    setCustomTemplateHtml(req.userId!, html);
+    res.json({ ...getUserSettings(req.userId!), has_custom_template: true });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Salvataggio non riuscito" });
+  }
+});
+
+/** Rimozione del template su misura (torna al classic se era attivo). */
+settingsRouter.delete("/custom-template", (req, res) => {
+  setCustomTemplateHtml(req.userId!, null);
+  res.json({ ...getUserSettings(req.userId!), has_custom_template: false });
 });

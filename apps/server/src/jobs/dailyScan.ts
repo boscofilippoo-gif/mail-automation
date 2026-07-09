@@ -15,6 +15,7 @@ import {
 } from "../gmail/scan.js";
 import {
   createScanRun,
+  getCustomTemplateHtml,
   getInboundMail,
   getPriceList,
   getUserById,
@@ -98,7 +99,7 @@ export async function processSingleMail(args: {
 
     let pdfPath: string;
     try {
-      pdfPath = await generatePdf(extracted, settings);
+      pdfPath = await generatePdf(extracted, settings, getCustomTemplateHtml(userId));
     } catch (e) {
       throw new Error(`Generazione PDF fallita: ${msg(e)}`);
     }
