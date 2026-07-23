@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, ChevronDown, ExternalLink, Loader2, Mail, Plus, Send, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Loader2, Plus, Send, Trash2 } from "lucide-react";
 
-import { api, gmailUrl, type ExtractedDocument, type LineItem, type Me, type SourceMail } from "@/api";
+import { api, type ExtractedDocument, type LineItem, type Me } from "@/api";
 import { cn } from "@/lib/utils";
+import { SourceMailSection } from "@/components/SourceMailSection";
 
 const inputCls =
   "w-full rounded-xl border border-border bg-card px-3.5 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-accent";
@@ -261,83 +262,6 @@ export function EditDocument() {
         <EditPreview draft={draft} />
       </div>
     </div>
-  );
-}
-
-/** Mail originale del cliente: collassabile, caricata da Gmail solo al primo click. */
-function SourceMailSection({
-  docId,
-  sourceMessageId,
-  showGmailLink,
-}: {
-  docId: number;
-  sourceMessageId: string | null;
-  showGmailLink: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [mail, setMail] = useState<SourceMail | null>(null);
-  const [state, setState] = useState<"idle" | "loading" | "error">("idle");
-
-  async function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (next && !mail && state !== "loading") {
-      setState("loading");
-      try {
-        setMail(await api.getSource(docId));
-        setState("idle");
-      } catch {
-        setState("error");
-      }
-    }
-  }
-
-  return (
-    <section className="rounded-2xl border border-border bg-card">
-      <button
-        onClick={toggle}
-        className="flex w-full items-center justify-between px-5 py-3.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <span className="inline-flex items-center gap-2">
-          <Mail className="size-4" style={{ color: "var(--azzurro)" }} />
-          Mail originale del cliente
-        </span>
-        <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
-      </button>
-      {open && (
-        <div className="border-t border-border px-5 py-4 text-sm">
-          {state === "loading" && <p className="text-muted-foreground">Caricamento…</p>}
-          {state === "error" && (
-            <p style={{ color: "var(--rosa)" }}>Mail originale non trovata (eliminata da Gmail?).</p>
-          )}
-          {mail && (
-            <>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-medium">{mail.subject || "(senza oggetto)"}</p>
-                {sourceMessageId && showGmailLink && (
-                  <a
-                    href={gmailUrl(sourceMessageId)}
-                    target="_blank"
-                    rel="noopener"
-                    className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-foreground"
-                  >
-                    <ExternalLink className="size-3" />
-                    Apri in Gmail
-                  </a>
-                )}
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {mail.from} · {mail.date}
-              </p>
-              {/* testo puro, mai HTML: bodyText è già estratto come plain text */}
-              <pre className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap font-sans text-sm leading-relaxed text-muted-foreground">
-                {mail.bodyText || "(corpo vuoto)"}
-              </pre>
-            </>
-          )}
-        </div>
-      )}
-    </section>
   );
 }
 

@@ -5,7 +5,7 @@ import { Check, FileSpreadsheet, FileUp, ImagePlus, Loader2, Sparkles, Trash2, W
 import {
   api,
   type BreweryRow,
-  type BreweryTemplateState,
+  type BreweryTemplateSummary,
   type Me,
   type StyleProposal,
   type UserSettings,
@@ -516,12 +516,12 @@ function fileToDataUrl(file: File): Promise<string> {
 
 function BrewerySection({ onError }: { onError: (e: string | null) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [state, setState] = useState<BreweryTemplateState | null>(null);
+  const [templates, setTemplates] = useState<BreweryTemplateSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
 
   useEffect(() => {
-    api.getBreweryTemplate().then(setState).catch(() => setState({ hasTemplate: false }));
+    api.getBreweryTemplates().then((r) => setTemplates(r.templates)).catch(() => setTemplates([]));
   }, []);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -533,7 +533,9 @@ function BrewerySection({ onError }: { onError: (e: string | null) => void }) {
     try {
       const data = await fileToDataUrl(file);
       const breweryName = name.trim() || file.name.replace(/\.xlsx?$/i, "");
-      setState(await api.uploadBreweryTemplate(data, breweryName));
+      const r = await api.uploadBreweryTemplate(data, breweryName);
+      setTemplates(r.templates);
+      setName("");
     } catch (err) {
       onError(err instanceof Error ? err.message : "Caricamento non riuscito");
     } finally {
@@ -541,11 +543,12 @@ function BrewerySection({ onError }: { onError: (e: string | null) => void }) {
     }
   }
 
-  async function saveMapping(mapping: BreweryRow[]) {
+  async function saveMapping(breweryKey: string, mapping: BreweryRow[]) {
     setBusy(true);
     onError(null);
     try {
-      setState(await api.updateBreweryMapping(mapping));
+      const r = await api.updateBreweryMapping(breweryKey, mapping);
+      setTemplates(r.templates);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Salvataggio non riuscito");
     } finally {
@@ -553,12 +556,12 @@ function BrewerySection({ onError }: { onError: (e: string | null) => void }) {
     }
   }
 
-  async function remove() {
+  async function remove(breweryKey: string) {
     setBusy(true);
     onError(null);
     try {
-      setState(await api.deleteBreweryTemplate());
-      setName("");
+      const r = await api.deleteBreweryTemplate(breweryKey);
+      setTemplates(r.templates);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Rimozione non riuscita");
     } finally {
@@ -572,50 +575,55 @@ function BrewerySection({ onError }: { onError: (e: string | null) => void }) {
   return (
     <section>
       <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">
-        Modulo Excel del birrificio
+        Moduli Excel dei birrifici
       </h2>
       <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-        Carica il file Excel che usi per ordinare al birrificio. Quando arriva un ordine, il
-        sistema compila le quantità sul tuo modulo (lasciando intatte formule e formato) e te lo
-        prepara pronto da inviare. Serve un modulo per birrificio.
+        Carica il file Excel di ogni birrificio con cui lavori. Quando arriva un ordine, il sistema
+        compila le quantità sui moduli giusti (lasciando intatte formule e formato) e te li prepara
+        pronti da inviare. Con più birrifici, l'ordine viene smistato tra i moduli.
       </p>
 
-      <div className="mt-4 space-y-4 rounded-2xl border border-border bg-card p-5">
-        {!state?.hasTemplate ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              className={inputCls + " max-w-xs"}
-              placeholder="Nome birrificio (es. Eschenbacher)"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <button onClick={() => inputRef.current?.click()} className={btnCls} disabled={busy}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : <FileUp className="size-4" />}
-              Carica modulo .xlsx
-            </button>
-          </div>
-        ) : (
-          <>
+      <div className="mt-4 space-y-4">
+        {templates.map((t) => (
+          <div key={t.brewery_key} className="space-y-3 rounded-2xl border border-border bg-card p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="flex items-center gap-2 text-sm">
                 <FileSpreadsheet className="size-4" style={{ color: "var(--azzurro)" }} />
-                <strong>{state.name}</strong>
+                <strong>{t.name}</strong>
                 <span className="text-muted-foreground">
-                  · {state.mapping?.length ?? 0} prodotti · quantità in colonna {state.qty_column}
+                  · {t.mapping.length} prodotti · quantità in colonna {t.qty_column}
                 </span>
               </p>
-              <button onClick={remove} className={btnCls} disabled={busy}>
+              <button onClick={() => remove(t.brewery_key)} className={btnCls} disabled={busy}>
                 <Trash2 className="size-4" />
                 Rimuovi
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Per ogni prodotto del modulo, controlla i nomi con cui i clienti lo ordinano. Il
-              sistema li usa per capire dove scrivere le quantità.
+              Per ogni prodotto, controlla i nomi con cui i clienti lo ordinano: il sistema li usa
+              per capire in quale modulo scrivere la quantità.
             </p>
-            <MappingEditor mapping={state.mapping ?? []} busy={busy} onSave={saveMapping} />
-          </>
-        )}
+            <MappingEditor
+              mapping={t.mapping}
+              busy={busy}
+              onSave={(m) => saveMapping(t.brewery_key, m)}
+            />
+          </div>
+        ))}
+
+        {/* aggiungi un nuovo modulo */}
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-border p-5">
+          <input
+            className={inputCls + " max-w-xs"}
+            placeholder="Nome birrificio (es. Eschenbacher)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <button onClick={() => inputRef.current?.click()} className={btnCls} disabled={busy}>
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <FileUp className="size-4" />}
+            {templates.length === 0 ? "Carica modulo .xlsx" : "Aggiungi un altro modulo"}
+          </button>
+        </div>
         <input ref={inputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={onFile} className="hidden" />
       </div>
     </section>

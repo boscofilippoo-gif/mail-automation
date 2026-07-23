@@ -834,7 +834,7 @@ function DocCard({
           Scarica
         </a>
       </div>
-      {doc.hasXlsx && (
+      {doc.breweryCount === 1 && (
         <a
           href={api.xlsxUrl(doc.id)}
           className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium"
@@ -843,6 +843,16 @@ function DocCard({
           <FileSpreadsheet className="size-4" />
           Scarica Excel birrificio
         </a>
+      )}
+      {(doc.breweryCount ?? 0) >= 2 && (
+        <Link
+          to={`/documents/${doc.id}/sort`}
+          className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium"
+          style={{ background: "var(--azzurro)", color: "var(--nero)" }}
+        >
+          <FileSpreadsheet className="size-4" />
+          Smista per fornitori
+        </Link>
       )}
     </div>
   );

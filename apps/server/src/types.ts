@@ -73,6 +73,14 @@ export interface DocumentRecord {
   sent_status: SentStatus;
   draft_id: string | null;
   xlsx_path: string | null; // Excel del birrificio, se l'utente usa un modulo
+  sort_assignments_json: string | null; // smistamento {itemIndex→brewery_key} confermato
+}
+
+/** Assegnazione di una riga d'ordine a una riga di un modulo birrificio (smistamento). */
+export interface SortAssignment {
+  itemIndex: number;
+  breweryKey: string;
+  row: number;
 }
 
 /** Una riga-prodotto del modulo Excel di un birrificio, con sinonimi per il match. */

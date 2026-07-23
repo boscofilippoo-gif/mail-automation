@@ -212,6 +212,8 @@ export function migrate(): void {
   `);
   // path del file .xlsx generato per un documento (null se l'utente non usa moduli)
   ensureColumn("documents", "xlsx_path", "xlsx_path TEXT");
+  // smistamento multi-fornitore: mappa {itemIndex → brewery_key} confermata dall'utente
+  ensureColumn("documents", "sort_assignments_json", "sort_assignments_json TEXT");
 
   // ── login universale / doppia modalità casella ──
   rebuildUsersIfNeeded(); // google_sub nullable su DB pre-esistenti

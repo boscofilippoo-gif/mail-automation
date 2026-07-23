@@ -4,21 +4,27 @@ import { Router } from "express";
 
 import { requireAuth } from "../auth/session.js";
 import {
+  countBreweryTemplates,
+  getAllBreweryTemplates,
   getBreweryTemplate,
+  getBreweryTemplateByKey,
   getCustomTemplateHtml,
   getDocument,
+  getSortAssignments,
   getUserSettings,
   hasScope,
   listDocuments,
   listProcessed,
   setDocumentXlsxPath,
+  setSortAssignments,
   updateDocument,
   updateDocumentStatus,
 } from "../repo.js";
 import { renderDocument } from "../pdf/render.js";
 import { generatePdf } from "../pdf/generate.js";
-import { generateBreweryXlsx } from "../xlsx/generate.js";
-import { mapOrderToRows } from "../ai/mapBrewery.js";
+import { generateBreweryXlsx, generateForBrewery } from "../xlsx/generate.js";
+import { mapOrderToRows, mapOrderAcrossTemplates } from "../ai/mapBrewery.js";
+import type { SortAssignment } from "../types.js";
 import { getAuthedClientForUser } from "../auth/google.js";
 import { hydrateMessage } from "../gmail/scan.js";
 import { getMailForUser } from "../jobs/dailyScan.js";
@@ -103,8 +109,8 @@ function validateDocument(body: unknown): ExtractedDocument {
 
 /** Lista documenti generati, con i dati estratti già parsati. */
 documentsRouter.get("/", (req, res) => {
-  // se l'utente ha un modulo birrificio, ogni documento può produrre un .xlsx
-  const hasBrewery = getBreweryTemplate(req.userId!) !== null;
+  // il numero di moduli decide il flusso Excel: 0 nessuno, 1 download diretto, ≥2 smistamento
+  const breweryCount = countBreweryTemplates(req.userId!);
   const docs = listDocuments(req.userId!).map((d) => ({
     id: d.id,
     type: d.type,
@@ -112,7 +118,7 @@ documentsRouter.get("/", (req, res) => {
     sourceMessageId: d.source_message_id,
     sentStatus: d.sent_status,
     draftId: d.draft_id,
-    hasXlsx: hasBrewery,
+    breweryCount,
     data: JSON.parse(d.extracted_json),
   }));
   res.json(docs);
@@ -383,6 +389,173 @@ documentsRouter.get("/:id/xlsx", async (req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Errore generazione Excel";
     console.error(`[documents] xlsx ${req.params.id} fallito:`, message);
+    res.status(500).json({ error: message });
+  }
+});
+
+/* ───────────────── Smistamento multi-fornitore ───────────────── */
+
+/**
+ * Stato dello smistamento: dati documento, moduli disponibili, assegnazioni
+ * (salvate se confermate, altrimenti auto-mappate), e righe non assegnate.
+ */
+documentsRouter.get("/:id/sort", async (req, res) => {
+  const doc = getDocument(req.userId!, Number(req.params.id));
+  if (!doc) {
+    res.status(404).json({ error: "Documento non trovato" });
+    return;
+  }
+  try {
+    const templates = getAllBreweryTemplates(req.userId!);
+    const data = JSON.parse(doc.extracted_json) as ExtractedDocument;
+
+    const saved = getSortAssignments(req.userId!, doc.id);
+    let assignments: SortAssignment[];
+    let unassigned: number[];
+    if (saved) {
+      // ricostruisci le assegnazioni salvate {itemIndex→breweryKey} risalendo alla riga
+      // dalla mappa del modulo (il match locale è deterministico); i non presenti = non assegnati
+      const result = await mapOrderAcrossTemplates(
+        data.line_items,
+        templates.map((t) => ({ breweryKey: t.brewery_key, rows: t.mapping })),
+      );
+      // sovrascrivi con le scelte salvate dall'utente (hanno priorità)
+      const byIndex = new Map(result.assignments.map((a) => [a.itemIndex, a]));
+      for (const [idxStr, key] of Object.entries(saved)) {
+        const idx = Number(idxStr);
+        const tmpl = templates.find((t) => t.brewery_key === key);
+        if (!tmpl) continue;
+        const auto = byIndex.get(idx);
+        // se la scelta salvata coincide col modulo auto, tieni la riga auto; altrimenti prima riga del modulo
+        const row = auto?.breweryKey === key ? auto.row : (tmpl.mapping[0]?.row ?? 1);
+        byIndex.set(idx, { itemIndex: idx, breweryKey: key, row });
+      }
+      assignments = [...byIndex.values()];
+      unassigned = data.line_items
+        .map((_, i) => i)
+        .filter((i) => !byIndex.has(i));
+    } else {
+      const result = await mapOrderAcrossTemplates(
+        data.line_items,
+        templates.map((t) => ({ breweryKey: t.brewery_key, rows: t.mapping })),
+      );
+      assignments = result.assignments;
+      unassigned = result.unassigned;
+    }
+
+    res.json({
+      data,
+      templates: templates.map((t) => ({ breweryKey: t.brewery_key, name: t.name })),
+      assignments,
+      unassigned,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Errore smistamento";
+    console.error(`[documents] sort ${req.params.id} fallito:`, message);
+    res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * Conferma lo smistamento: salva {itemIndex→breweryKey} e, se passati, i dati
+ * corretti del documento (quantità). Rivalida tutto lato server.
+ */
+documentsRouter.post("/:id/sort", (req, res) => {
+  const doc = getDocument(req.userId!, Number(req.params.id));
+  if (!doc) {
+    res.status(404).json({ error: "Documento non trovato" });
+    return;
+  }
+  try {
+    const body = req.body as { assignments?: unknown; data?: unknown };
+
+    // 1) se arrivano dati corretti (quantità), rivalidali e riscrivi extracted_json
+    let lineItemCount: number;
+    if (body.data !== undefined) {
+      const validated = validateDocument(body.data);
+      validated.doc_type = doc.type; // il tipo non cambia dallo smistamento
+      updateDocument(req.userId!, doc.id, JSON.stringify(validated), doc.pdf_path);
+      lineItemCount = validated.line_items.length;
+    } else {
+      lineItemCount = (JSON.parse(doc.extracted_json) as ExtractedDocument).line_items.length;
+    }
+
+    // 2) valida le assegnazioni contro moduli/righe reali e range indici
+    if (!Array.isArray(body.assignments)) {
+      throw new Error("Assegnazioni mancanti.");
+    }
+    const templates = getAllBreweryTemplates(req.userId!);
+    const rowsByKey = new Map(templates.map((t) => [t.brewery_key, new Set(t.mapping.map((r) => r.row))]));
+    const map: Record<number, string> = {};
+    for (const a of body.assignments) {
+      const o = a as { itemIndex?: unknown; breweryKey?: unknown; row?: unknown };
+      if (typeof o.itemIndex !== "number" || o.itemIndex < 0 || o.itemIndex >= lineItemCount) continue;
+      if (typeof o.breweryKey !== "string") continue;
+      const validRows = rowsByKey.get(o.breweryKey);
+      if (!validRows) continue; // brewery_key inesistente → scartata
+      if (typeof o.row === "number" && !validRows.has(o.row)) continue; // riga non del modulo → scartata
+      map[o.itemIndex] = o.breweryKey;
+    }
+    setSortAssignments(req.userId!, doc.id, map);
+    res.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Errore salvataggio smistamento";
+    res.status(400).json({ error: message });
+  }
+});
+
+/**
+ * Scarica l'Excel di UN fornitore per il documento smistato. Usa le assegnazioni
+ * salvate (o le auto-mappa se assenti) e genera il file solo con le righe di
+ * quel fornitore. 404 se il fornitore non esiste o non ha righe assegnate.
+ */
+documentsRouter.get("/:id/xlsx/:breweryKey", async (req, res) => {
+  const doc = getDocument(req.userId!, Number(req.params.id));
+  if (!doc) {
+    res.status(404).json({ error: "Documento non trovato" });
+    return;
+  }
+  const breweryKey = req.params.breweryKey!;
+  try {
+    const template = getBreweryTemplateByKey(req.userId!, breweryKey);
+    if (!template) {
+      res.status(404).json({ error: "Fornitore non trovato." });
+      return;
+    }
+    const data = JSON.parse(doc.extracted_json) as ExtractedDocument;
+
+    // assegnazioni: salvate se ci sono, altrimenti auto-map cross-modulo
+    const saved = getSortAssignments(req.userId!, doc.id);
+    const templates = getAllBreweryTemplates(req.userId!);
+    const auto = await mapOrderAcrossTemplates(
+      data.line_items,
+      templates.map((t) => ({ breweryKey: t.brewery_key, rows: t.mapping })),
+    );
+    let assignments: SortAssignment[] = auto.assignments;
+    if (saved) {
+      const byIndex = new Map(auto.assignments.map((a) => [a.itemIndex, a]));
+      for (const [idxStr, key] of Object.entries(saved)) {
+        const idx = Number(idxStr);
+        const tmpl = templates.find((t) => t.brewery_key === key);
+        if (!tmpl) continue;
+        const a = byIndex.get(idx);
+        const row = a?.breweryKey === key ? a.row : (tmpl.mapping[0]?.row ?? 1);
+        byIndex.set(idx, { itemIndex: idx, breweryKey: key, row });
+      }
+      assignments = [...byIndex.values()];
+    }
+
+    const result = await generateForBrewery(data, template, assignments);
+    if (!result) {
+      res.status(404).json({ error: "Nessuna riga assegnata a questo fornitore." });
+      return;
+    }
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${template.name}-${doc.id}.xlsx"`);
+    fs.createReadStream(result.filePath).pipe(res);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Errore generazione Excel";
+    console.error(`[documents] xlsx/${breweryKey} ${req.params.id} fallito:`, message);
     res.status(500).json({ error: message });
   }
 });

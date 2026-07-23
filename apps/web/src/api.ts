@@ -98,7 +98,7 @@ export interface DocumentItem {
   sourceMessageId: string;
   sentStatus: SentStatus;
   draftId: string | null;
-  hasXlsx?: boolean; // true se l'utente ha un modulo birrificio (xlsx scaricabile)
+  breweryCount?: number; // n° moduli birrificio: 0 nessuno, 1 download diretto, ≥2 smistamento
   data: ExtractedDocument;
 }
 
@@ -108,12 +108,11 @@ export interface BreweryRow {
   aliases: string[];
 }
 
-export interface BreweryTemplateState {
-  hasTemplate: boolean;
-  name?: string;
-  brewery_key?: string;
-  qty_column?: string;
-  mapping?: BreweryRow[];
+export interface BreweryTemplateSummary {
+  brewery_key: string;
+  name: string;
+  qty_column: string;
+  mapping: BreweryRow[];
 }
 
 export interface SourceMail {
@@ -121,6 +120,20 @@ export interface SourceMail {
   from: string;
   date: string;
   bodyText: string;
+}
+
+/** Assegnazione di una riga d'ordine a un fornitore+riga (smistamento). */
+export interface SortAssignment {
+  itemIndex: number;
+  breweryKey: string;
+  row: number;
+}
+
+export interface SortState {
+  data: ExtractedDocument;
+  templates: { breweryKey: string; name: string }[];
+  assignments: SortAssignment[];
+  unassigned: number[];
 }
 
 export type DraftResult = { sentStatus: SentStatus; draftId: string } | { error: string; needsReauth?: boolean };
@@ -298,21 +311,35 @@ export const api = {
   pdfUrl: (id: number, download = false) =>
     `/api/documents/${id}/pdf${download ? "?download=1" : ""}`,
   xlsxUrl: (id: number) => `/api/documents/${id}/xlsx`,
+  xlsxUrlFor: (id: number, breweryKey: string) =>
+    `/api/documents/${id}/xlsx/${encodeURIComponent(breweryKey)}`,
 
-  // ── modulo Excel del birrificio ──
-  getBreweryTemplate: () => request<BreweryTemplateState>("/api/settings/brewery-template"),
+  // ── smistamento multi-fornitore ──
+  getSort: (id: number) => request<SortState>(`/api/documents/${id}/sort`),
+  saveSort: (id: number, assignments: SortAssignment[], data?: ExtractedDocument) =>
+    request<{ ok: true }>(`/api/documents/${id}/sort`, {
+      method: "POST",
+      body: JSON.stringify({ assignments, data }),
+    }),
+
+  // ── moduli Excel dei birrifici (lista) ──
+  getBreweryTemplates: () =>
+    request<{ templates: BreweryTemplateSummary[] }>("/api/settings/brewery-template"),
   uploadBreweryTemplate: (data: string, name: string) =>
-    request<BreweryTemplateState>("/api/settings/brewery-template", {
+    request<{ templates: BreweryTemplateSummary[] }>("/api/settings/brewery-template", {
       method: "POST",
       body: JSON.stringify({ data, name }),
     }),
-  updateBreweryMapping: (mapping: BreweryRow[]) =>
-    request<BreweryTemplateState>("/api/settings/brewery-template", {
+  updateBreweryMapping: (breweryKey: string, mapping: BreweryRow[]) =>
+    request<{ templates: BreweryTemplateSummary[] }>("/api/settings/brewery-template", {
       method: "PUT",
-      body: JSON.stringify({ mapping }),
+      body: JSON.stringify({ brewery_key: breweryKey, mapping }),
     }),
-  deleteBreweryTemplate: () =>
-    request<BreweryTemplateState>("/api/settings/brewery-template", { method: "DELETE" }),
+  deleteBreweryTemplate: (breweryKey: string) =>
+    request<{ templates: BreweryTemplateSummary[] }>("/api/settings/brewery-template", {
+      method: "DELETE",
+      body: JSON.stringify({ brewery_key: breweryKey }),
+    }),
 };
 
 /** Avvia il login Google (soli dati base: nessun avviso). */

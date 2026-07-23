@@ -3,7 +3,8 @@ import { Router } from "express";
 import { requireAuth } from "../auth/session.js";
 import {
   deleteBreweryTemplate,
-  getBreweryTemplate,
+  getAllBreweryTemplates,
+  getBreweryTemplateByKey,
   getCustomTemplateHtml,
   getUserSettings,
   setBreweryTemplate,
@@ -251,26 +252,37 @@ function slugify(name: string): string {
   );
 }
 
-/** Il modulo birrificio corrente dell'utente (senza il file base64, che è pesante). */
-settingsRouter.get("/brewery-template", (req, res) => {
-  const t = getBreweryTemplate(req.userId!);
-  if (!t) {
-    res.json({ hasTemplate: false });
-    return;
+/** Forma leggera di un modulo (senza il file base64, pesante) per la lista. */
+function templateSummary(t: {
+  brewery_key: string;
+  name: string;
+  qty_column: string;
+  mapping: BreweryRow[];
+}) {
+  return { brewery_key: t.brewery_key, name: t.name, qty_column: t.qty_column, mapping: t.mapping };
+}
+
+/** Chiave unica: se lo slug è già preso, aggiunge un suffisso -2, -3, … */
+function uniqueKey(userId: number, name: string): string {
+  const base = slugify(name);
+  const existing = new Set(getAllBreweryTemplates(userId).map((t) => t.brewery_key));
+  if (!existing.has(base)) return base;
+  for (let n = 2; n < 100; n++) {
+    const k = `${base}-${n}`;
+    if (!existing.has(k)) return k;
   }
-  res.json({
-    hasTemplate: true,
-    brewery_key: t.brewery_key,
-    name: t.name,
-    qty_column: t.qty_column,
-    mapping: t.mapping,
-  });
+  return `${base}-${Date.now()}`;
+}
+
+/** Tutti i moduli birrificio dell'utente (lista leggera). */
+settingsRouter.get("/brewery-template", (req, res) => {
+  const list = getAllBreweryTemplates(req.userId!).map(templateSummary);
+  res.json({ templates: list });
 });
 
 /**
- * Caricamento modulo: riceve l'.xlsx (base64) + nome birrificio. Lo analizza,
- * propone alias per ogni riga-prodotto e lo SALVA subito (l'utente potrà poi
- * correggere la mappa con PUT). Ritorna la mappa proposta.
+ * Caricamento di un NUOVO modulo: analizza l'.xlsx, propone alias, salva con
+ * chiave unica (non sovrascrive moduli esistenti). Ritorna la lista aggiornata.
  */
 settingsRouter.post("/brewery-template", async (req, res) => {
   try {
@@ -288,30 +300,31 @@ settingsRouter.post("/brewery-template", async (req, res) => {
     const withAliases = await suggestAliases(inspection.rows);
 
     setBreweryTemplate(req.userId!, {
-      brewery_key: slugify(name),
+      brewery_key: uniqueKey(req.userId!, name),
       name,
       xlsx_base64: payload,
       mapping: withAliases,
       qty_column: inspection.qtyColumn,
       sheet_name: inspection.sheetName,
     });
-    res.json({ hasTemplate: true, name, qty_column: inspection.qtyColumn, mapping: withAliases });
+    res.json({ templates: getAllBreweryTemplates(req.userId!).map(templateSummary) });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Caricamento non riuscito" });
   }
 });
 
-/** Aggiorna la mappa prodotti→righe (alias corretti dall'utente). */
+/** Aggiorna la mappa prodotti→righe di UN modulo (per brewery_key nel body). */
 settingsRouter.put("/brewery-template", (req, res) => {
   try {
-    const t = getBreweryTemplate(req.userId!);
-    if (!t) throw new Error("Nessun modulo birrificio salvato.");
-    const rawMapping = (req.body as { mapping?: unknown }).mapping;
-    if (!Array.isArray(rawMapping)) throw new Error("Mappa non valida.");
-    // validazione difensiva: tieni solo righe con row numerico e label stringa
+    const body = req.body as { brewery_key?: unknown; mapping?: unknown };
+    if (typeof body.brewery_key !== "string") throw new Error("brewery_key mancante.");
+    const t = getBreweryTemplateByKey(req.userId!, body.brewery_key);
+    if (!t) throw new Error("Modulo non trovato.");
+    if (!Array.isArray(body.mapping)) throw new Error("Mappa non valida.");
+    // validazione difensiva: solo righe che esistono nel modulo
     const validRows = new Set(t.mapping.map((r) => r.row));
     const mapping: BreweryRow[] = [];
-    for (const r of rawMapping) {
+    for (const r of body.mapping) {
       const o = r as { row?: unknown; label?: unknown; aliases?: unknown };
       if (typeof o.row !== "number" || !validRows.has(o.row)) continue;
       mapping.push({
@@ -323,15 +336,15 @@ settingsRouter.put("/brewery-template", (req, res) => {
       });
     }
     updateBreweryMapping(req.userId!, t.brewery_key, mapping);
-    res.json({ hasTemplate: true, name: t.name, qty_column: t.qty_column, mapping });
+    res.json({ templates: getAllBreweryTemplates(req.userId!).map(templateSummary) });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Aggiornamento non riuscito" });
   }
 });
 
-/** Rimuove il modulo birrificio. */
+/** Rimuove UN modulo (brewery_key nel body). */
 settingsRouter.delete("/brewery-template", (req, res) => {
-  const t = getBreweryTemplate(req.userId!);
-  if (t) deleteBreweryTemplate(req.userId!, t.brewery_key);
-  res.json({ hasTemplate: false });
+  const key = (req.body as { brewery_key?: unknown }).brewery_key;
+  if (typeof key === "string") deleteBreweryTemplate(req.userId!, key);
+  res.json({ templates: getAllBreweryTemplates(req.userId!).map(templateSummary) });
 });

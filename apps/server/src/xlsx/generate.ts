@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import ExcelJS from "exceljs";
 
 import { XLSX_DIR } from "../db.js";
-import type { BreweryTemplate, ExtractedDocument } from "../types.js";
+import type { BreweryTemplate, ExtractedDocument, SortAssignment } from "../types.js";
 
 /** Esito della generazione: path del file + righe dell'ordine non mappate. */
 export interface XlsxResult {
@@ -61,4 +61,23 @@ export async function generateBreweryXlsx(
   await wb.xlsx.writeFile(filePath);
 
   return { filePath, unmatched };
+}
+
+/**
+ * Genera il file di UN fornitore a partire dalle assegnazioni di smistamento
+ * cross-modulo. Filtra le assegnazioni di questo brewery_key e riusa
+ * generateBreweryXlsx. Ritorna null se nessuna riga è assegnata a questo
+ * fornitore (non si crea un Excel vuoto).
+ */
+export async function generateForBrewery(
+  doc: ExtractedDocument,
+  template: BreweryTemplate,
+  assignments: SortAssignment[],
+): Promise<XlsxResult | null> {
+  const mine = new Map<number, number>();
+  for (const a of assignments) {
+    if (a.breweryKey === template.brewery_key) mine.set(a.itemIndex, a.row);
+  }
+  if (mine.size === 0) return null; // nessuna riga per questo fornitore → niente file
+  return generateBreweryXlsx(doc, template, mine);
 }

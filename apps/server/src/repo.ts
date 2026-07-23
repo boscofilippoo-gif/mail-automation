@@ -259,23 +259,43 @@ export function setDocumentXlsxPath(userId: number, id: number, xlsxPath: string
   db.prepare(`UPDATE documents SET xlsx_path = ? WHERE id = ? AND user_id = ?`).run(xlsxPath, id, userId);
 }
 
+/**
+ * Salva lo smistamento confermato dall'utente: mappa {itemIndex → brewery_key}.
+ * Funzione dedicata (NON updateDocument, che riscriverebbe anche il pdf_path).
+ */
+export function setSortAssignments(userId: number, id: number, map: Record<number, string>): void {
+  db.prepare(`UPDATE documents SET sort_assignments_json = ? WHERE id = ? AND user_id = ?`).run(
+    JSON.stringify(map),
+    id,
+    userId,
+  );
+}
+
+/** Lo smistamento salvato per un documento, o null se mai confermato. */
+export function getSortAssignments(userId: number, id: number): Record<number, string> | null {
+  const row = db
+    .prepare(`SELECT sort_assignments_json FROM documents WHERE id = ? AND user_id = ?`)
+    .get(id, userId) as { sort_assignments_json: string | null } | undefined;
+  if (!row?.sort_assignments_json) return null;
+  try {
+    return JSON.parse(row.sort_assignments_json) as Record<number, string>;
+  } catch {
+    return null;
+  }
+}
+
 /* ───────────────────────── Moduli Excel birrifici ───────────────────────── */
 
-/** Il primo (e per ora unico) modulo birrificio dell'utente, o null. */
-export function getBreweryTemplate(userId: number): BreweryTemplate | null {
-  const row = db
-    .prepare(`SELECT * FROM brewery_templates WHERE user_id = ? ORDER BY created_at LIMIT 1`)
-    .get(userId) as
-    | {
-        brewery_key: string;
-        name: string;
-        xlsx_base64: string;
-        mapping_json: string;
-        qty_column: string;
-        sheet_name: string | null;
-      }
-    | undefined;
-  if (!row) return null;
+interface BreweryRowRaw {
+  brewery_key: string;
+  name: string;
+  xlsx_base64: string;
+  mapping_json: string;
+  qty_column: string;
+  sheet_name: string | null;
+}
+
+function rowToTemplate(row: BreweryRowRaw): BreweryTemplate {
   let mapping: BreweryRow[] = [];
   try {
     mapping = JSON.parse(row.mapping_json) as BreweryRow[];
@@ -290,6 +310,38 @@ export function getBreweryTemplate(userId: number): BreweryTemplate | null {
     qty_column: row.qty_column,
     sheet_name: row.sheet_name,
   };
+}
+
+/** Il primo modulo birrificio dell'utente (per il path legacy mono-modulo), o null. */
+export function getBreweryTemplate(userId: number): BreweryTemplate | null {
+  const row = db
+    .prepare(`SELECT * FROM brewery_templates WHERE user_id = ? ORDER BY created_at LIMIT 1`)
+    .get(userId) as BreweryRowRaw | undefined;
+  return row ? rowToTemplate(row) : null;
+}
+
+/** Tutti i moduli birrificio dell'utente, in ordine di caricamento. */
+export function getAllBreweryTemplates(userId: number): BreweryTemplate[] {
+  const rows = db
+    .prepare(`SELECT * FROM brewery_templates WHERE user_id = ? ORDER BY created_at`)
+    .all(userId) as BreweryRowRaw[];
+  return rows.map(rowToTemplate);
+}
+
+/** Un modulo specifico per chiave, o null. */
+export function getBreweryTemplateByKey(userId: number, breweryKey: string): BreweryTemplate | null {
+  const row = db
+    .prepare(`SELECT * FROM brewery_templates WHERE user_id = ? AND brewery_key = ?`)
+    .get(userId, breweryKey) as BreweryRowRaw | undefined;
+  return row ? rowToTemplate(row) : null;
+}
+
+/** Numero di moduli birrificio dell'utente. */
+export function countBreweryTemplates(userId: number): number {
+  const r = db
+    .prepare(`SELECT COUNT(*) AS c FROM brewery_templates WHERE user_id = ?`)
+    .get(userId) as { c: number };
+  return r.c;
 }
 
 /** Crea o sostituisce il modulo birrificio dell'utente (upsert per brewery_key). */
