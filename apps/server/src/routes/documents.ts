@@ -4,17 +4,21 @@ import { Router } from "express";
 
 import { requireAuth } from "../auth/session.js";
 import {
+  getBreweryTemplate,
   getCustomTemplateHtml,
   getDocument,
   getUserSettings,
   hasScope,
   listDocuments,
   listProcessed,
+  setDocumentXlsxPath,
   updateDocument,
   updateDocumentStatus,
 } from "../repo.js";
 import { renderDocument } from "../pdf/render.js";
 import { generatePdf } from "../pdf/generate.js";
+import { generateBreweryXlsx } from "../xlsx/generate.js";
+import { mapOrderToRows } from "../ai/mapBrewery.js";
 import { getAuthedClientForUser } from "../auth/google.js";
 import { hydrateMessage } from "../gmail/scan.js";
 import { getMailForUser } from "../jobs/dailyScan.js";
@@ -99,6 +103,8 @@ function validateDocument(body: unknown): ExtractedDocument {
 
 /** Lista documenti generati, con i dati estratti già parsati. */
 documentsRouter.get("/", (req, res) => {
+  // se l'utente ha un modulo birrificio, ogni documento può produrre un .xlsx
+  const hasBrewery = getBreweryTemplate(req.userId!) !== null;
   const docs = listDocuments(req.userId!).map((d) => ({
     id: d.id,
     type: d.type,
@@ -106,6 +112,7 @@ documentsRouter.get("/", (req, res) => {
     sourceMessageId: d.source_message_id,
     sentStatus: d.sent_status,
     draftId: d.draft_id,
+    hasXlsx: hasBrewery,
     data: JSON.parse(d.extracted_json),
   }));
   res.json(docs);
@@ -342,4 +349,40 @@ documentsRouter.get("/:id/pdf", (req, res) => {
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `${disposition}; filename="${doc.type}-${doc.id}.pdf"`);
   fs.createReadStream(doc.pdf_path).pipe(res);
+});
+
+/**
+ * Scarica l'Excel del birrificio per un documento. Rigenerato on-demand se
+ * assente (disco Render effimero) da extracted_json + modulo birrificio salvato.
+ * 404 se l'utente non ha un modulo birrificio configurato.
+ */
+documentsRouter.get("/:id/xlsx", async (req, res) => {
+  const doc = getDocument(req.userId!, Number(req.params.id));
+  if (!doc) {
+    res.status(404).json({ error: "Documento non trovato" });
+    return;
+  }
+  try {
+    // il modulo è la condizione: senza, non serviamo neppure un vecchio file orfano
+    const template = getBreweryTemplate(req.userId!);
+    if (!template) {
+      res.status(404).json({ error: "Nessun modulo birrificio configurato." });
+      return;
+    }
+    let xlsxPath = doc.xlsx_path;
+    if (!xlsxPath || !fs.existsSync(xlsxPath)) {
+      const data = JSON.parse(doc.extracted_json) as ExtractedDocument;
+      const assignments = await mapOrderToRows(data.line_items, template.mapping);
+      const result = await generateBreweryXlsx(data, template, assignments);
+      xlsxPath = result.filePath;
+      setDocumentXlsxPath(req.userId!, doc.id, xlsxPath);
+    }
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="ordine-${doc.id}.xlsx"`);
+    fs.createReadStream(xlsxPath).pipe(res);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Errore generazione Excel";
+    console.error(`[documents] xlsx ${req.params.id} fallito:`, message);
+    res.status(500).json({ error: message });
+  }
 });

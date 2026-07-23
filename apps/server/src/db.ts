@@ -9,9 +9,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // data/ vive nella root del monorepo (due livelli sopra apps/server/src)
 const DATA_DIR = path.resolve(__dirname, "../../../data");
 const PDF_DIR = path.join(DATA_DIR, "pdfs");
+const XLSX_DIR = path.join(DATA_DIR, "xlsx");
 const DB_PATH = path.join(DATA_DIR, "app.db");
 
 fs.mkdirSync(PDF_DIR, { recursive: true });
+fs.mkdirSync(XLSX_DIR, { recursive: true });
 
 export const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
@@ -192,6 +194,25 @@ export function migrate(): void {
   // template su misura generato dall'AI (HTML con placeholder, ~150KB max)
   ensureColumn("user_settings", "custom_template_html", "custom_template_html TEXT");
 
+  // ── moduli Excel dei birrifici (feature Cappelletti) ──
+  // Il file .xlsx-modello della mandante + la mappa prodotti→righe: alla mail
+  // riempiamo solo la colonna quantità e lasciamo intatte le formule del modulo.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS brewery_templates (
+      user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      brewery_key    TEXT NOT NULL,          -- slug del birrificio (es. 'eschenbacher')
+      name           TEXT NOT NULL,          -- nome leggibile mostrato all'utente
+      xlsx_base64    TEXT NOT NULL,          -- il file modello, base64 (<1MB tipico)
+      mapping_json   TEXT NOT NULL,          -- [{row, label, aliases[]}] righe-prodotto
+      qty_column     TEXT NOT NULL,          -- colonna quantità da riempire (es. 'E')
+      sheet_name     TEXT,                   -- foglio target (null = primo)
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, brewery_key)
+    );
+  `);
+  // path del file .xlsx generato per un documento (null se l'utente non usa moduli)
+  ensureColumn("documents", "xlsx_path", "xlsx_path TEXT");
+
   // ── login universale / doppia modalità casella ──
   rebuildUsersIfNeeded(); // google_sub nullable su DB pre-esistenti
   ensureColumn("users", "mail_mode", "mail_mode TEXT"); // 'gmail' | 'inoltro' | NULL
@@ -204,4 +225,4 @@ export function migrate(): void {
   }
 }
 
-export { DATA_DIR, PDF_DIR, DB_PATH };
+export { DATA_DIR, PDF_DIR, XLSX_DIR, DB_PATH };

@@ -98,7 +98,22 @@ export interface DocumentItem {
   sourceMessageId: string;
   sentStatus: SentStatus;
   draftId: string | null;
+  hasXlsx?: boolean; // true se l'utente ha un modulo birrificio (xlsx scaricabile)
   data: ExtractedDocument;
+}
+
+export interface BreweryRow {
+  row: number;
+  label: string;
+  aliases: string[];
+}
+
+export interface BreweryTemplateState {
+  hasTemplate: boolean;
+  name?: string;
+  brewery_key?: string;
+  qty_column?: string;
+  mapping?: BreweryRow[];
 }
 
 export interface SourceMail {
@@ -282,6 +297,22 @@ export const api = {
 
   pdfUrl: (id: number, download = false) =>
     `/api/documents/${id}/pdf${download ? "?download=1" : ""}`,
+  xlsxUrl: (id: number) => `/api/documents/${id}/xlsx`,
+
+  // ── modulo Excel del birrificio ──
+  getBreweryTemplate: () => request<BreweryTemplateState>("/api/settings/brewery-template"),
+  uploadBreweryTemplate: (data: string, name: string) =>
+    request<BreweryTemplateState>("/api/settings/brewery-template", {
+      method: "POST",
+      body: JSON.stringify({ data, name }),
+    }),
+  updateBreweryMapping: (mapping: BreweryRow[]) =>
+    request<BreweryTemplateState>("/api/settings/brewery-template", {
+      method: "PUT",
+      body: JSON.stringify({ mapping }),
+    }),
+  deleteBreweryTemplate: () =>
+    request<BreweryTemplateState>("/api/settings/brewery-template", { method: "DELETE" }),
 };
 
 /** Avvia il login Google (soli dati base: nessun avviso). */

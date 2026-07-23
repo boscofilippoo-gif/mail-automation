@@ -8,6 +8,7 @@ import {
   Download,
   ExternalLink,
   Eye,
+  FileSpreadsheet,
   FileText,
   Loader2,
   Pencil,
@@ -833,6 +834,16 @@ function DocCard({
           Scarica
         </a>
       </div>
+      {doc.hasXlsx && (
+        <a
+          href={api.xlsxUrl(doc.id)}
+          className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium"
+          style={{ background: "var(--azzurro)", color: "var(--nero)" }}
+        >
+          <FileSpreadsheet className="size-4" />
+          Scarica Excel birrificio
+        </a>
+      )}
     </div>
   );
 }

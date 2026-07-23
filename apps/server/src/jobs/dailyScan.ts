@@ -15,6 +15,7 @@ import {
 } from "../gmail/scan.js";
 import {
   createScanRun,
+  getBreweryTemplate,
   getCustomTemplateHtml,
   getInboundMail,
   getPriceList,
@@ -26,10 +27,13 @@ import {
   listActiveKeywords,
   listActiveUserIds,
   recordProcessed,
+  setDocumentXlsxPath,
   touchSync,
   updateDocumentStatus,
   updateScanRunCounters,
 } from "../repo.js";
+import { generateBreweryXlsx } from "../xlsx/generate.js";
+import { mapOrderToRows } from "../ai/mapBrewery.js";
 import type { DocType, PriceListItem, UserSettings } from "../types.js";
 
 const GMAIL_READONLY = "https://www.googleapis.com/auth/gmail.readonly";
@@ -111,6 +115,19 @@ export async function processSingleMail(args: {
       pdfPath,
       sourceMessageId: mail.id,
     });
+
+    // Se l'utente ha un modulo Excel di birrificio, genera anche l'.xlsx.
+    // Non-bloccante: un errore qui non deve far fallire il documento/PDF.
+    const brewery = getBreweryTemplate(userId);
+    if (brewery) {
+      try {
+        const assignments = await mapOrderToRows(extracted.line_items, brewery.mapping);
+        const xlsx = await generateBreweryXlsx(extracted, brewery, assignments);
+        setDocumentXlsxPath(userId, docRecord.id, xlsx.filePath);
+      } catch (e) {
+        console.error(`[xlsx] generazione modulo birrificio fallita (doc ${docRecord.id}):`, msg(e));
+      }
+    }
     recordProcessed({
       userId,
       gmailMessageId: mail.id,

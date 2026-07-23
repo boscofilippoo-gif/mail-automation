@@ -72,6 +72,24 @@ export interface DocumentRecord {
   created_at: string;
   sent_status: SentStatus;
   draft_id: string | null;
+  xlsx_path: string | null; // Excel del birrificio, se l'utente usa un modulo
+}
+
+/** Una riga-prodotto del modulo Excel di un birrificio, con sinonimi per il match. */
+export interface BreweryRow {
+  row: number; // indice riga 1-based nel foglio Excel
+  label: string; // testo della colonna Description del modulo
+  aliases: string[]; // sinonimi liberi ("hell", "bionda"…) per la mappatura AI
+}
+
+/** Modulo Excel di un birrificio salvato per l'utente. */
+export interface BreweryTemplate {
+  brewery_key: string;
+  name: string;
+  xlsx_base64: string;
+  mapping: BreweryRow[];
+  qty_column: string; // colonna quantità da riempire (es. "E")
+  sheet_name: string | null;
 }
 
 /** Personalizzazione del documento PDF (template, colori, dati azienda, logo). */

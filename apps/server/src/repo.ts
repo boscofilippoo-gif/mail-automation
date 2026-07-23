@@ -5,6 +5,8 @@ import { encrypt, decrypt } from "./crypto.js";
 import {
   DEFAULT_SETTINGS,
   type ApiConnectorConfig,
+  type BreweryRow,
+  type BreweryTemplate,
   type DocType,
   type DocumentRecord,
   type Keyword,
@@ -250,6 +252,75 @@ export function updateDocument(
     id,
     userId,
   );
+}
+
+/** Registra (o aggiorna) il path del file Excel generato per un documento. */
+export function setDocumentXlsxPath(userId: number, id: number, xlsxPath: string): void {
+  db.prepare(`UPDATE documents SET xlsx_path = ? WHERE id = ? AND user_id = ?`).run(xlsxPath, id, userId);
+}
+
+/* ───────────────────────── Moduli Excel birrifici ───────────────────────── */
+
+/** Il primo (e per ora unico) modulo birrificio dell'utente, o null. */
+export function getBreweryTemplate(userId: number): BreweryTemplate | null {
+  const row = db
+    .prepare(`SELECT * FROM brewery_templates WHERE user_id = ? ORDER BY created_at LIMIT 1`)
+    .get(userId) as
+    | {
+        brewery_key: string;
+        name: string;
+        xlsx_base64: string;
+        mapping_json: string;
+        qty_column: string;
+        sheet_name: string | null;
+      }
+    | undefined;
+  if (!row) return null;
+  let mapping: BreweryRow[] = [];
+  try {
+    mapping = JSON.parse(row.mapping_json) as BreweryRow[];
+  } catch {
+    mapping = [];
+  }
+  return {
+    brewery_key: row.brewery_key,
+    name: row.name,
+    xlsx_base64: row.xlsx_base64,
+    mapping,
+    qty_column: row.qty_column,
+    sheet_name: row.sheet_name,
+  };
+}
+
+/** Crea o sostituisce il modulo birrificio dell'utente (upsert per brewery_key). */
+export function setBreweryTemplate(userId: number, t: BreweryTemplate): void {
+  db.prepare(
+    `INSERT INTO brewery_templates (user_id, brewery_key, name, xlsx_base64, mapping_json, qty_column, sheet_name)
+     VALUES (@user_id, @brewery_key, @name, @xlsx_base64, @mapping_json, @qty_column, @sheet_name)
+     ON CONFLICT(user_id, brewery_key) DO UPDATE SET
+       name = @name, xlsx_base64 = @xlsx_base64, mapping_json = @mapping_json,
+       qty_column = @qty_column, sheet_name = @sheet_name`,
+  ).run({
+    user_id: userId,
+    brewery_key: t.brewery_key,
+    name: t.name,
+    xlsx_base64: t.xlsx_base64,
+    mapping_json: JSON.stringify(t.mapping),
+    qty_column: t.qty_column,
+    sheet_name: t.sheet_name,
+  });
+}
+
+/** Aggiorna solo la mappa prodotti→righe di un modulo esistente. */
+export function updateBreweryMapping(userId: number, breweryKey: string, mapping: BreweryRow[]): void {
+  db.prepare(
+    `UPDATE brewery_templates SET mapping_json = ? WHERE user_id = ? AND brewery_key = ?`,
+  ).run(JSON.stringify(mapping), userId, breweryKey);
+}
+
+/** Rimuove il modulo birrificio dell'utente. */
+export function deleteBreweryTemplate(userId: number, breweryKey: string): void {
+  db.prepare(`DELETE FROM brewery_templates WHERE user_id = ? AND brewery_key = ?`).run(userId, breweryKey);
 }
 
 /* ───────────────────────── Listino prezzi ───────────────────────── */

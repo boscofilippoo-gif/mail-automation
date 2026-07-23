@@ -2,9 +2,13 @@ import { Router } from "express";
 
 import { requireAuth } from "../auth/session.js";
 import {
+  deleteBreweryTemplate,
+  getBreweryTemplate,
   getCustomTemplateHtml,
   getUserSettings,
+  setBreweryTemplate,
   setCustomTemplateHtml,
+  updateBreweryMapping,
   upsertUserSettings,
 } from "../repo.js";
 import { TEMPLATES } from "../pdf/templates/index.js";
@@ -12,7 +16,9 @@ import { renderCustom, validateCustomTemplate } from "../pdf/templates/custom.js
 import { renderDocument } from "../pdf/render.js";
 import { SAMPLE_DOCUMENT } from "../pdf/sample.js";
 import { analyzeStyleFromPdf, generateTemplateFromPdf } from "../ai/customTemplate.js";
-import { DEFAULT_SETTINGS, type UserSettings } from "../types.js";
+import { inspectBreweryXlsx } from "../xlsx/inspect.js";
+import { suggestAliases } from "../ai/mapBrewery.js";
+import { DEFAULT_SETTINGS, type BreweryRow, type UserSettings } from "../types.js";
 
 export const settingsRouter = Router();
 
@@ -226,4 +232,106 @@ settingsRouter.post("/custom-template", (req, res) => {
 settingsRouter.delete("/custom-template", (req, res) => {
   setCustomTemplateHtml(req.userId!, null);
   res.json({ ...getUserSettings(req.userId!), has_custom_template: false });
+});
+
+/* ───────────────── Modulo Excel del birrificio ───────────────── */
+
+const MAX_XLSX_BYTES = 5 * 1024 * 1024;
+
+/** slug stabile dal nome birrificio (chiave del modulo). */
+function slugify(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 40) || "birrificio"
+  );
+}
+
+/** Il modulo birrificio corrente dell'utente (senza il file base64, che è pesante). */
+settingsRouter.get("/brewery-template", (req, res) => {
+  const t = getBreweryTemplate(req.userId!);
+  if (!t) {
+    res.json({ hasTemplate: false });
+    return;
+  }
+  res.json({
+    hasTemplate: true,
+    brewery_key: t.brewery_key,
+    name: t.name,
+    qty_column: t.qty_column,
+    mapping: t.mapping,
+  });
+});
+
+/**
+ * Caricamento modulo: riceve l'.xlsx (base64) + nome birrificio. Lo analizza,
+ * propone alias per ogni riga-prodotto e lo SALVA subito (l'utente potrà poi
+ * correggere la mappa con PUT). Ritorna la mappa proposta.
+ */
+settingsRouter.post("/brewery-template", async (req, res) => {
+  try {
+    const body = req.body as { data?: unknown; name?: unknown };
+    if (typeof body.data !== "string" || !body.data) {
+      throw new Error("Serve il file .xlsx in base64 nel campo 'data'.");
+    }
+    const payload = body.data.replace(/^data:[^;]+;base64,/, "");
+    if (Buffer.byteLength(payload, "base64") > MAX_XLSX_BYTES) {
+      throw new Error("File troppo grande (max 5MB).");
+    }
+    const name = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 80) : "Birrificio";
+
+    const inspection = await inspectBreweryXlsx(body.data);
+    const withAliases = await suggestAliases(inspection.rows);
+
+    setBreweryTemplate(req.userId!, {
+      brewery_key: slugify(name),
+      name,
+      xlsx_base64: payload,
+      mapping: withAliases,
+      qty_column: inspection.qtyColumn,
+      sheet_name: inspection.sheetName,
+    });
+    res.json({ hasTemplate: true, name, qty_column: inspection.qtyColumn, mapping: withAliases });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Caricamento non riuscito" });
+  }
+});
+
+/** Aggiorna la mappa prodotti→righe (alias corretti dall'utente). */
+settingsRouter.put("/brewery-template", (req, res) => {
+  try {
+    const t = getBreweryTemplate(req.userId!);
+    if (!t) throw new Error("Nessun modulo birrificio salvato.");
+    const rawMapping = (req.body as { mapping?: unknown }).mapping;
+    if (!Array.isArray(rawMapping)) throw new Error("Mappa non valida.");
+    // validazione difensiva: tieni solo righe con row numerico e label stringa
+    const validRows = new Set(t.mapping.map((r) => r.row));
+    const mapping: BreweryRow[] = [];
+    for (const r of rawMapping) {
+      const o = r as { row?: unknown; label?: unknown; aliases?: unknown };
+      if (typeof o.row !== "number" || !validRows.has(o.row)) continue;
+      mapping.push({
+        row: o.row,
+        label: typeof o.label === "string" ? o.label.slice(0, 200) : "",
+        aliases: Array.isArray(o.aliases)
+          ? o.aliases.filter((a): a is string => typeof a === "string" && a.trim().length > 0).map((a) => a.trim().slice(0, 60)).slice(0, 20)
+          : [],
+      });
+    }
+    updateBreweryMapping(req.userId!, t.brewery_key, mapping);
+    res.json({ hasTemplate: true, name: t.name, qty_column: t.qty_column, mapping });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Aggiornamento non riuscito" });
+  }
+});
+
+/** Rimuove il modulo birrificio. */
+settingsRouter.delete("/brewery-template", (req, res) => {
+  const t = getBreweryTemplate(req.userId!);
+  if (t) deleteBreweryTemplate(req.userId!, t.brewery_key);
+  res.json({ hasTemplate: false });
 });
