@@ -175,9 +175,9 @@ export interface DocumentFilters {
 }
 
 /** Serializza un oggetto in query string, saltando vuoti/undefined. */
-function toQuery(o: Record<string, string | number | undefined>): string {
+function toQuery(o: object): string {
   const p = new URLSearchParams();
-  for (const [k, v] of Object.entries(o)) {
+  for (const [k, v] of Object.entries(o) as [string, string | number | null | undefined][]) {
     if (v !== undefined && v !== "" && v !== null) p.set(k, String(v));
   }
   const s = p.toString();
