@@ -565,7 +565,7 @@ function CustomTemplateSection({
   );
 }
 
-/* ───────────────────────── Modulo Excel del birrificio ───────────────────────── */
+/* ───────────────────────── Moduli ordine dei fornitori ───────────────────────── */
 
 /** Legge un file come data URL base64. */
 function fileToDataUrl(file: File): Promise<string> {
@@ -642,12 +642,13 @@ function BrewerySection({ onError }: { onError: (e: string | null) => void }) {
   return (
     <section>
       <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">
-        Moduli Excel dei birrifici
+        Moduli ordine dei fornitori
       </h2>
       <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-        Carica il file Excel di ogni birrificio con cui lavori. Quando arriva un ordine, il sistema
-        compila le quantità sui moduli giusti (lasciando intatte formule e formato) e te li prepara
-        pronti da inviare. Con più birrifici, l'ordine viene smistato tra i moduli.
+        Carica il modulo d'ordine Excel di ogni fornitore con cui lavori (birrifici, grossisti,
+        produttori…). Quando arriva un ordine, il sistema compila le quantità sul modulo giusto,
+        lasciando intatte formule e formato, e te lo prepara pronto da inviare. Con più fornitori,
+        l'ordine viene smistato tra i moduli.
       </p>
 
       <div className="mt-4 space-y-4">
@@ -682,7 +683,7 @@ function BrewerySection({ onError }: { onError: (e: string | null) => void }) {
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-border p-5">
           <input
             className={inputCls + " max-w-xs"}
-            placeholder="Nome birrificio (es. Eschenbacher)"
+            placeholder="Nome fornitore (es. Birrificio Rossi, Grossisti Bianchi)"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />

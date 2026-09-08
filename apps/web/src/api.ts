@@ -367,7 +367,7 @@ export const api = {
       body: JSON.stringify({ assignments, data }),
     }),
 
-  // ── moduli Excel dei birrifici (lista) ──
+  // ── moduli ordine dei fornitori (lista) ──
   getBreweryTemplates: () =>
     request<{ templates: BreweryTemplateSummary[] }>("/api/settings/brewery-template"),
   uploadBreweryTemplate: (data: string, name: string) =>

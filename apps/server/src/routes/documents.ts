@@ -448,7 +448,7 @@ documentsRouter.get("/:id/xlsx", async (req, res) => {
     // il modulo è la condizione: senza, non serviamo neppure un vecchio file orfano
     const template = getBreweryTemplate(req.userId!);
     if (!template) {
-      res.status(404).json({ error: "Nessun modulo birrificio configurato." });
+      res.status(404).json({ error: "Nessun modulo fornitore configurato." });
       return;
     }
     let xlsxPath = doc.xlsx_path;

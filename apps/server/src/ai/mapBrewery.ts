@@ -20,7 +20,7 @@ const ALIASES_SCHEMA = {
             type: "array",
             items: { type: "string" },
             description:
-              "Nomi/sinonimi con cui un cliente potrebbe chiamare questo prodotto (italiano/tedesco, abbreviazioni, senza gradazione), es. per 'HURTIP HELL Beer 4,8%': ['hell','helles','bionda','chiara'].",
+              "Nomi/sinonimi con cui un cliente potrebbe chiamare questo prodotto in un ordine via mail: abbreviazioni, nome commerciale senza codici/formati/gradazioni, varianti in italiano e nella lingua del fornitore. Es. per 'HELL Beer 4,8% 30L': ['hell','helles','bionda','chiara']; per 'Farina 00 sacco 25kg': ['farina 00','farina','sacco farina'].",
           },
         },
         required: ["row", "aliases"],
@@ -45,7 +45,7 @@ export async function suggestAliases(rows: BreweryRow[]): Promise<BreweryRow[]> 
       model: env.anthropic.listinoModel,
       max_tokens: 2000,
       system:
-        "Sei un esperto di birra e vino. Ricevi le righe-prodotto di un modulo d'ordine di un birrificio e, per ognuna, proponi i nomi con cui un cliente italiano potrebbe indicarla in un ordine via mail (sinonimi, abbreviazioni, nome senza la gradazione alcolica, eventuale tedesco). Usa SEMPRE il tool 'propose_aliases'.",
+        "Sei un esperto di cataloghi prodotto B2B (food & beverage, materie prime, articoli commerciali). Ricevi le righe-prodotto del modulo d'ordine di un fornitore e, per ognuna, proponi i nomi con cui un cliente italiano potrebbe indicarla in un ordine via mail: sinonimi, abbreviazioni, nome senza codici, formati o gradazioni, eventuali varianti nella lingua del fornitore. Deduci il settore dai prodotti stessi. Usa SEMPRE il tool 'propose_aliases'.",
       tools: [
         {
           name: "propose_aliases",
@@ -140,7 +140,7 @@ function scoreRow(descNorm: string, descWords: Set<string>, r: BreweryRow): numb
 const LOCAL_MATCH_THRESHOLD = 50;
 
 /**
- * Mappa ogni riga d'ordine sulla riga del modulo birrificio.
+ * Mappa ogni riga d'ordine sulla riga del modulo fornitore.
  * Prima tenta un match locale (label/alias contenuti nella descrizione) — gratis;
  * solo le righe d'ordine non risolte vengono passate all'AI per il match flessibile.
  * Ritorna Map<indice line_item → riga modulo>. Le righe non mappate sono assenti.
@@ -175,7 +175,7 @@ export async function mapOrderToRows(
       model: env.anthropic.listinoModel,
       max_tokens: 1000,
       system:
-        "Abbini le righe di un ordine cliente (nomi liberi) alle righe di un modulo d'ordine di un birrificio. Match flessibile: sinonimi, abbreviazioni, italiano/tedesco, gradazione ignorata. Se nessuna riga del modulo corrisponde, usa null. Usa SEMPRE il tool 'match_rows'.",
+        "Abbini le righe di un ordine cliente (nomi liberi) alle righe del modulo d'ordine di un fornitore. Match flessibile: sinonimi, abbreviazioni, lingue diverse, codici/formati/gradazioni ignorati se il prodotto è lo stesso. Se nessuna riga del modulo corrisponde, usa null. Usa SEMPRE il tool 'match_rows'.",
       tools: [
         {
           name: "match_rows",

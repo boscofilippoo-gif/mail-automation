@@ -1196,7 +1196,7 @@ function DocCard({
           style={{ background: "var(--azzurro)", color: "var(--nero)" }}
         >
           <FileSpreadsheet className="size-4" />
-          Scarica Excel birrificio
+          Scarica Excel fornitore
         </a>
       )}
       {(doc.breweryCount ?? 0) >= 2 && (

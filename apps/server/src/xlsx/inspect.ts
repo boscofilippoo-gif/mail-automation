@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import type { BreweryRow } from "../types.js";
 
 /**
- * Analisi di un modulo Excel di birrificio.
+ * Analisi di un modulo d'ordine Excel di un fornitore (qualsiasi settore).
  *
  * I moduli reali (es. "ORDERS EXPORT ITALY" di Eschenbacher) sono fogli
  * pre-costruiti: righe-prodotto con contenuto, pesi e formule già dentro.
@@ -17,10 +17,12 @@ export interface BreweryInspection {
   rows: BreweryRow[]; // righe-prodotto con label; aliases inizialmente vuoti
 }
 
-// intestazioni di blocco da NON trattare come prodotti (categorie del modulo)
-const BLOCK_HEADERS = /^(key\s*keg|fusti|keg|bottiglie|bottles|cans|lattine|imballi?)/i;
+// intestazioni di blocco da NON trattare come prodotti (categorie del modulo).
+// Copre i moduli dei birrifici (feature d'origine) più categorie generiche.
+const BLOCK_HEADERS =
+  /^(key\s*keg|fusti|keg|bottiglie|bottles|cans|lattine|imballi?|categoria|sezione|reparto|linea|famiglia|gruppo|totale|subtotale|riepilogo)\b/i;
 // note/righe di servizio da scartare (asterischi, "solo su prenotazione", ecc.)
-const NOTE_LINE = /^[*\s.]|solo su prenotazione|minimo|nota|note|attenzione|^\s*$/i;
+const NOTE_LINE = /^[*\s.]|solo su prenotazione|minimo|nota|note|attenzione|condizioni|consegna|pagamento|^\s*$/i;
 
 /** Estrae testo pulito da una cella exceljs (stringa, numero, o rich text {richText}/{text}). */
 function cellText(v: unknown): string {
@@ -35,13 +37,13 @@ function cellText(v: unknown): string {
 }
 
 /** Riconosce l'header dei prezzi/quantità in una riga del foglio. */
+const QTY_HEADERS = /^(ordered\s*quantity|quantit[àa](\s*(ordinata|richiesta|ordine))?|quantity|qty|qt[àa]\.?|q\.?\s*t[àa]\.?|pezzi|pz\.?|colli|n\.?\s*pezzi|ordine|menge|anzahl|cantidad|quantité)$/i;
+const DESC_HEADERS = /^(description|descrizione(\s*articolo)?|articolo|articoli|prodotto|prodotti|denominazione|item|product|nome|voce|bezeichnung|artikel)$/i;
 function looksLikeQtyHeader(v: string): boolean {
-  const s = v.trim().toLowerCase();
-  return s.startsWith("ordered quantity") || s === "quantità" || s === "quantity" || s === "qta" || s === "q.tà";
+  return QTY_HEADERS.test(v.trim().replace(/\s+/g, " "));
 }
 function looksLikeDescHeader(v: string): boolean {
-  const s = v.trim().toLowerCase();
-  return s === "description" || s === "descrizione" || s === "articolo" || s === "prodotto";
+  return DESC_HEADERS.test(v.trim().replace(/\s+/g, " "));
 }
 
 /**
@@ -81,7 +83,7 @@ export async function inspectBreweryXlsx(base64: string): Promise<BreweryInspect
   });
   if (!headerRow || !qtyCol) {
     throw new Error(
-      'Non ho trovato la colonna "Ordered Quantity" nel modulo. Assicurati che sia il file standard del birrificio.',
+      'Non ho trovato la colonna delle quantità nel modulo. Serve un\'intestazione tipo "Quantità", "Qtà", "Pezzi" o "Ordered Quantity" nel primo foglio: rinominala nel file e ricarica.',
     );
   }
 

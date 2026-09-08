@@ -251,11 +251,11 @@ settingsRouter.delete("/custom-template", (req, res) => {
   res.json({ ...getUserSettings(req.userId!), has_custom_template: false });
 });
 
-/* ───────────────── Modulo Excel del birrificio ───────────────── */
+/* ───────────────── Moduli ordine dei fornitori ───────────────── */
 
 const MAX_XLSX_BYTES = 5 * 1024 * 1024;
 
-/** slug stabile dal nome birrificio (chiave del modulo). */
+/** slug stabile dal nome fornitore (chiave del modulo). */
 function slugify(name: string): string {
   return (
     name
@@ -264,7 +264,7 @@ function slugify(name: string): string {
       .replace(/[̀-ͯ]/g, "")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/(^-|-$)/g, "")
-      .slice(0, 40) || "birrificio"
+      .slice(0, 40) || "fornitore"
   );
 }
 
@@ -290,7 +290,7 @@ function uniqueKey(userId: number, name: string): string {
   return `${base}-${Date.now()}`;
 }
 
-/** Tutti i moduli birrificio dell'utente (lista leggera). */
+/** Tutti i moduli fornitore dell'utente (lista leggera). */
 settingsRouter.get("/brewery-template", (req, res) => {
   const list = getAllBreweryTemplates(req.userId!).map(templateSummary);
   res.json({ templates: list });
@@ -310,7 +310,7 @@ settingsRouter.post("/brewery-template", async (req, res) => {
     if (Buffer.byteLength(payload, "base64") > MAX_XLSX_BYTES) {
       throw new Error("File troppo grande (max 5MB).");
     }
-    const name = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 80) : "Birrificio";
+    const name = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 80) : "Fornitore";
 
     const inspection = await inspectBreweryXlsx(body.data);
     const withAliases = await suggestAliases(inspection.rows);
