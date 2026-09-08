@@ -96,6 +96,7 @@ export interface DocumentItem {
   type: DocType;
   createdAt: string;
   sourceMessageId: string;
+  subject: string | null; // oggetto della mail d'origine (dal log)
   sentStatus: SentStatus;
   draftId: string | null;
   breweryCount?: number; // n° moduli birrificio: 0 nessuno, 1 download diretto, ≥2 smistamento (solo ordini)
@@ -145,10 +146,42 @@ export interface ProcessedItem {
   subject: string | null;
   matched_keyword: string | null;
   status: "done" | "error" | "skipped";
+  document_id: number | null; // documento generato (solo status done)
   error: string | null;
   processed_at: string;
   category: string | null;
   detail: string | null;
+}
+
+/** Pagina di una lista server-side. */
+export interface Page<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export type DocumentSort = "recent" | "oldest" | "customer" | "total";
+
+export interface DocumentFilters {
+  q?: string;
+  type?: DocType;
+  status?: SentStatus;
+  from?: string; // YYYY-MM-DD
+  to?: string; // YYYY-MM-DD
+  sort?: DocumentSort;
+  limit?: number;
+  offset?: number;
+}
+
+/** Serializza un oggetto in query string, saltando vuoti/undefined. */
+function toQuery(o: Record<string, string | number | undefined>): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(o)) {
+    if (v !== undefined && v !== "" && v !== null) p.set(k, String(v));
+  }
+  const s = p.toString();
+  return s ? `?${s}` : "";
 }
 
 export interface ScanResult {
@@ -222,8 +255,10 @@ export const api = {
   deleteKeyword: (id: number) =>
     request<{ ok: true }>(`/api/keywords/${id}`, { method: "DELETE" }),
 
-  listDocuments: () => request<DocumentItem[]>("/api/documents"),
-  listProcessed: () => request<ProcessedItem[]>("/api/documents/processed"),
+  listDocuments: (f: DocumentFilters = {}) =>
+    request<Page<DocumentItem>>(`/api/documents${toQuery(f)}`),
+  listProcessed: (f: { status?: ProcessedItem["status"]; limit?: number; offset?: number } = {}) =>
+    request<Page<ProcessedItem>>(`/api/documents/processed${toQuery(f)}`),
   scanNow: () => request<ScanResult>("/api/scan", { method: "POST" }),
   scanRangeCount: (from: string, to: string) =>
     request<{ toAnalyze: number }>("/api/scan/range", {

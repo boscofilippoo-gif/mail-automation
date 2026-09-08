@@ -221,6 +221,13 @@ export function migrate(): void {
   ensureColumn("user_settings", "notify_email", "notify_email TEXT");
   ensureColumn("user_settings", "notify_errors", "notify_errors INTEGER NOT NULL DEFAULT 1");
 
+  // ── indici per liste paginate/filtrate (idempotenti) ──
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_documents_user_created ON documents(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_processed_user_at ON processed(user_id, processed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_processed_document ON processed(document_id);
+  `);
+
   // ── login universale / doppia modalità casella ──
   rebuildUsersIfNeeded(); // google_sub nullable su DB pre-esistenti
   ensureColumn("users", "mail_mode", "mail_mode TEXT"); // 'gmail' | 'inoltro' | NULL

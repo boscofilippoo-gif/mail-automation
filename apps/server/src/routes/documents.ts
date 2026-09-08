@@ -14,8 +14,9 @@ import {
   getSortAssignments,
   getUserSettings,
   hasScope,
-  listDocuments,
-  listProcessed,
+  queryDocuments,
+  queryProcessed,
+  type DocumentSort,
   setDocumentPdfPath,
   setDocumentXlsxPath,
   setSortAssignments,
@@ -40,8 +41,29 @@ import {
   type DocType,
   type ExtractedDocument,
   type LineItem,
+  type ProcessedStatus,
   type SentStatus,
 } from "../types.js";
+
+/* ───────────────── Parsing query string per liste paginate ───────────────── */
+
+function qs(v: unknown): string | undefined {
+  return typeof v === "string" && v.trim() ? v.trim() : undefined;
+}
+function qInt(v: unknown, fallback: number, max: number): number {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 ? Math.min(n, max) : fallback;
+}
+function qEnum<T extends string>(v: unknown, allowed: readonly T[]): T | undefined {
+  return typeof v === "string" && (allowed as readonly string[]).includes(v) ? (v as T) : undefined;
+}
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+function qDate(v: unknown): string | undefined {
+  const s = qs(v);
+  return s && ISO_DATE.test(s) ? s : undefined;
+}
+const DOC_SORTS = ["recent", "oldest", "customer", "total"] as const;
+const PROCESSED_STATUSES = ["done", "error", "skipped"] as const;
 
 export const documentsRouter = Router();
 
@@ -109,28 +131,59 @@ function validateDocument(body: unknown): ExtractedDocument {
   };
 }
 
-/** Lista documenti generati, con i dati estratti già parsati. */
+/**
+ * Lista documenti filtrata e paginata.
+ * Query: q, type, status, from, to (YYYY-MM-DD), sort (recent|oldest|customer|total),
+ * limit (default 20, max 100), offset. Risposta: { items, total, limit, offset }.
+ */
 documentsRouter.get("/", (req, res) => {
+  const limit = qInt(req.query.limit, 20, 100) || 20;
+  const offset = qInt(req.query.offset, 0, 1_000_000);
+  const { items, total } = queryDocuments(req.userId!, {
+    q: qs(req.query.q)?.slice(0, 100),
+    type: qEnum(req.query.type, DOC_TYPES),
+    status: qEnum(req.query.status, SENT_STATUSES),
+    from: qDate(req.query.from),
+    to: qDate(req.query.to),
+    sort: qEnum<DocumentSort>(req.query.sort, DOC_SORTS),
+    limit,
+    offset,
+  });
   // il numero di moduli decide il flusso Excel: 0 nessuno, 1 download diretto, ≥2 smistamento.
   // I moduli fornitore riguardano solo gli ORDINI: su fatture/preventivi non si mostra nulla.
   const breweryCount = countBreweryTemplates(req.userId!);
-  const docs = listDocuments(req.userId!).map((d) => ({
-    id: d.id,
-    type: d.type,
-    createdAt: d.created_at,
-    sourceMessageId: d.source_message_id,
-    sentStatus: d.sent_status,
-    draftId: d.draft_id,
-    breweryCount: d.type === "ordine" ? breweryCount : 0,
-    edited: d.original_json !== null,
-    data: JSON.parse(d.extracted_json),
-  }));
-  res.json(docs);
+  res.json({
+    total,
+    limit,
+    offset,
+    items: items.map((d) => ({
+      id: d.id,
+      type: d.type,
+      createdAt: d.created_at,
+      sourceMessageId: d.source_message_id,
+      subject: d.subject,
+      sentStatus: d.sent_status,
+      draftId: d.draft_id,
+      breweryCount: d.type === "ordine" ? breweryCount : 0,
+      edited: d.original_json !== null,
+      data: JSON.parse(d.extracted_json),
+    })),
+  });
 });
 
-/** Log delle mail processate (per la dashboard: stato done/error). */
+/**
+ * Log delle mail processate, filtrato per esito e paginato.
+ * Query: status (done|error|skipped), limit (default 50, max 200), offset.
+ */
 documentsRouter.get("/processed", (req, res) => {
-  res.json(listProcessed(req.userId!));
+  const limit = qInt(req.query.limit, 50, 200) || 50;
+  const offset = qInt(req.query.offset, 0, 1_000_000);
+  const { items, total } = queryProcessed(req.userId!, {
+    status: qEnum<ProcessedStatus>(req.query.status, PROCESSED_STATUSES),
+    limit,
+    offset,
+  });
+  res.json({ total, limit, offset, items });
 });
 
 /**

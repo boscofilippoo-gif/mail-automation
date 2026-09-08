@@ -214,6 +214,101 @@ export function listDocuments(userId: number, limit = 100): DocumentRecord[] {
     .all(userId, limit) as DocumentRecord[];
 }
 
+export type DocumentSort = "recent" | "oldest" | "customer" | "total";
+
+export interface DocumentQuery {
+  q?: string; // cerca in cliente, numero documento, oggetto della mail
+  type?: DocType;
+  status?: SentStatus;
+  from?: string; // ISO date (inclusa)
+  to?: string; // ISO date (inclusa)
+  sort?: DocumentSort;
+  limit: number;
+  offset: number;
+}
+
+/** Riga documento + oggetto della mail d'origine (dal log), per la lista filtrata. */
+export type DocumentListRow = DocumentRecord & { subject: string | null };
+
+/**
+ * Lista documenti filtrata e paginata, con conteggio totale. La ricerca usa
+ * json_extract sui campi estratti (cliente, numero) e l'oggetto della mail nel log:
+ * lavora in SQLite, non sui 100 in memoria → scala con l'archivio.
+ */
+export function queryDocuments(userId: number, qy: DocumentQuery): { items: DocumentListRow[]; total: number } {
+  const where: string[] = ["d.user_id = @userId"];
+  const params: Record<string, unknown> = { userId, limit: qy.limit, offset: qy.offset };
+
+  if (qy.type) {
+    where.push("d.type = @type");
+    params.type = qy.type;
+  }
+  if (qy.status) {
+    where.push("d.sent_status = @status");
+    params.status = qy.status;
+  }
+  if (qy.from) {
+    where.push("d.created_at >= @from");
+    params.from = `${qy.from} 00:00:00`;
+  }
+  if (qy.to) {
+    where.push("d.created_at <= @to");
+    params.to = `${qy.to} 23:59:59`;
+  }
+  if (qy.q) {
+    // escape dei jolly LIKE: l'utente cerca testo, non pattern
+    const like = `%${qy.q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+    where.push(
+      `(json_extract(d.extracted_json, '$.customer_name') LIKE @q ESCAPE '\\'
+        OR json_extract(d.extracted_json, '$.document_number') LIKE @q ESCAPE '\\'
+        OR json_extract(d.extracted_json, '$.customer_email') LIKE @q ESCAPE '\\'
+        OR p.subject LIKE @q ESCAPE '\\')`,
+    );
+    params.q = like;
+  }
+
+  const orderBy: Record<DocumentSort, string> = {
+    recent: "d.created_at DESC, d.id DESC",
+    oldest: "d.created_at ASC, d.id ASC",
+    customer: "json_extract(d.extracted_json, '$.customer_name') COLLATE NOCASE ASC, d.created_at DESC",
+    total: "json_extract(d.extracted_json, '$.total') DESC NULLS LAST, d.created_at DESC",
+  };
+
+  // p: la riga del log che ha generato il documento (al più una per documento)
+  const fromClause = `FROM documents d LEFT JOIN processed p ON p.document_id = d.id AND p.user_id = d.user_id`;
+  const whereClause = `WHERE ${where.join(" AND ")}`;
+
+  const total = (
+    db.prepare(`SELECT COUNT(*) AS n ${fromClause} ${whereClause}`).get(params) as { n: number }
+  ).n;
+  const items = db
+    .prepare(
+      `SELECT d.*, p.subject AS subject ${fromClause} ${whereClause}
+       ORDER BY ${orderBy[qy.sort ?? "recent"]} LIMIT @limit OFFSET @offset`,
+    )
+    .all(params) as DocumentListRow[];
+  return { items, total };
+}
+
+/** Log mail processate, filtrato per esito e paginato, con totale. */
+export function queryProcessed(
+  userId: number,
+  qy: { status?: ProcessedStatus; limit: number; offset: number },
+): { items: Processed[]; total: number } {
+  const where = ["user_id = @userId"];
+  const params: Record<string, unknown> = { userId, limit: qy.limit, offset: qy.offset };
+  if (qy.status) {
+    where.push("status = @status");
+    params.status = qy.status;
+  }
+  const whereClause = `WHERE ${where.join(" AND ")}`;
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM processed ${whereClause}`).get(params) as { n: number }).n;
+  const items = db
+    .prepare(`SELECT * FROM processed ${whereClause} ORDER BY processed_at DESC, id DESC LIMIT @limit OFFSET @offset`)
+    .all(params) as Processed[];
+  return { items, total };
+}
+
 export function getDocument(userId: number, id: number): DocumentRecord | undefined {
   return db
     .prepare(`SELECT * FROM documents WHERE id = ? AND user_id = ?`)

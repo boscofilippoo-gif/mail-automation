@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Calendar,
   Check,
@@ -14,15 +14,30 @@ import {
   Pencil,
   RefreshCw,
   RotateCcw,
+  Search,
   Send,
   Square,
   Trash2,
   Undo2,
+  X,
 } from "lucide-react";
 
 import { useOutletContext } from "react-router-dom";
 
-import { api, connectGmail, gmailUrl, type DocumentItem, type Me, type ProcessedItem, type ScanResult, type ScanRun, type SentStatus } from "@/api";
+import {
+  api,
+  connectGmail,
+  gmailUrl,
+  type DocType,
+  type DocumentFilters,
+  type DocumentItem,
+  type DocumentSort,
+  type Me,
+  type ProcessedItem,
+  type ScanResult,
+  type ScanRun,
+  type SentStatus,
+} from "@/api";
 import { cn } from "@/lib/utils";
 
 const RUN_KIND_LABEL: Record<ScanRun["kind"], string> = {
@@ -69,11 +84,97 @@ const STATUS_BG: Record<SentStatus, string> = {
   inviato: "color-mix(in oklab, var(--porcellana) 12%, transparent)",
 };
 
+const PAGE = 20;
+const PROCESSED_PAGE = 50;
+
+type Period = "7d" | "30d" | "month" | "all";
+const PERIOD_LABEL: Record<Period, string> = {
+  "7d": "Ultimi 7 giorni",
+  "30d": "Ultimi 30 giorni",
+  month: "Questo mese",
+  all: "Sempre",
+};
+
+/** Intervallo [from, to] in YYYY-MM-DD per un periodo (to = oggi). */
+function periodRange(p: Period): { from?: string; to?: string } {
+  if (p === "all") return {};
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const now = new Date();
+  const from = new Date(now);
+  if (p === "7d") from.setDate(now.getDate() - 7);
+  else if (p === "30d") from.setDate(now.getDate() - 30);
+  else from.setDate(1);
+  return { from: iso(from), to: iso(now) };
+}
+
+/** Filtri della griglia, letti/scritti nell'URL così sopravvivono a reload e link. */
+interface GridFilters {
+  q: string;
+  type: DocType | "";
+  status: SentStatus | "";
+  period: Period;
+  sort: DocumentSort;
+}
+const DEFAULT_FILTERS: GridFilters = { q: "", type: "", status: "", period: "all", sort: "recent" };
+
+function readFilters(sp: URLSearchParams): GridFilters {
+  const pick = <T extends string>(v: string | null, allowed: readonly T[], fb: T): T =>
+    v && (allowed as readonly string[]).includes(v) ? (v as T) : fb;
+  return {
+    q: sp.get("q") ?? "",
+    type: pick(sp.get("type"), ["fattura", "preventivo", "ordine", ""] as const, ""),
+    status: pick(sp.get("status"), ["da_inviare", "bozza", "inviato", ""] as const, ""),
+    period: pick(sp.get("period"), ["7d", "30d", "month", "all"] as const, "all"),
+    sort: pick(sp.get("sort"), ["recent", "oldest", "customer", "total"] as const, "recent"),
+  };
+}
+
+function toApiFilters(f: GridFilters): DocumentFilters {
+  return {
+    q: f.q || undefined,
+    type: f.type || undefined,
+    status: f.status || undefined,
+    sort: f.sort,
+    ...periodRange(f.period),
+  };
+}
+
+function isFiltered(f: GridFilters): boolean {
+  return Boolean(f.q || f.type || f.status || f.period !== "all");
+}
+
 export function Dashboard() {
   const { me } = useOutletContext<{ me: Me | null }>();
   const inoltro = me?.mailMode === "inoltro";
   const [docs, setDocs] = useState<DocumentItem[]>([]);
+  const [docsTotal, setDocsTotal] = useState(0);
+  const [docsLoading, setDocsLoading] = useState(true);
   const [processed, setProcessed] = useState<ProcessedItem[]>([]);
+  const [processedTotal, setProcessedTotal] = useState(0);
+  const [processedStatus, setProcessedStatus] = useState<ProcessedItem["status"] | "">("");
+
+  // filtri nell'URL (?q=…&type=…): la fonte di verità è la query string
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filters = readFilters(searchParams);
+  const filtersKey = searchParams.toString();
+  function setFilters(patch: Partial<GridFilters>) {
+    const next = { ...filters, ...patch };
+    const sp = new URLSearchParams();
+    for (const [k, v] of Object.entries(next)) {
+      if (v && v !== DEFAULT_FILTERS[k as keyof GridFilters]) sp.set(k, String(v));
+    }
+    setSearchParams(sp, { replace: true });
+  }
+
+  // la ricerca libera aggiorna l'URL con un piccolo ritardo (niente richiesta per ogni tasto)
+  const [qDraft, setQDraft] = useState(filters.q);
+  useEffect(() => {
+    if (qDraft === filters.q) return;
+    const t = setTimeout(() => setFilters({ q: qDraft }), 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qDraft]);
+  useEffect(() => setQDraft(filters.q), [filters.q]);
   const [scanning, setScanning] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -90,22 +191,84 @@ export function Dashboard() {
 
   const [history, setHistory] = useState<ScanRun[]>([]);
 
+  // ricarica dall'inizio, mantenendo però visibile tutto ciò che l'utente ha già
+  // caricato con "Carica altri" (limit = quante righe sono a schermo)
+  const docsShown = useRef(PAGE);
+  const processedShown = useRef(PROCESSED_PAGE);
   function reload() {
-    api.listDocuments().then(setDocs).catch(() => {});
-    api.listProcessed().then(setProcessed).catch(() => {});
+    api
+      .listDocuments({ ...toApiFilters(filters), limit: Math.min(100, Math.max(PAGE, docsShown.current)), offset: 0 })
+      .then((p) => {
+        setDocs(p.items);
+        setDocsTotal(p.total);
+        docsShown.current = p.items.length;
+      })
+      .catch(() => {})
+      .finally(() => setDocsLoading(false));
+    api
+      .listProcessed({
+        status: processedStatus || undefined,
+        limit: Math.min(200, Math.max(PROCESSED_PAGE, processedShown.current)),
+        offset: 0,
+      })
+      .then((p) => {
+        setProcessed(p.items);
+        setProcessedTotal(p.total);
+        processedShown.current = p.items.length;
+      })
+      .catch(() => {});
     api.listScanHistory().then(setHistory).catch(() => {});
   }
-  useEffect(reload, []);
+  // cambio filtri → si riparte dalla prima pagina
+  useEffect(() => {
+    docsShown.current = PAGE;
+    setDocsLoading(true);
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersKey]);
+  useEffect(() => {
+    processedShown.current = PROCESSED_PAGE;
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processedStatus]);
+
+  async function loadMoreDocs() {
+    const p = await api.listDocuments({ ...toApiFilters(filters), limit: PAGE, offset: docs.length }).catch(() => null);
+    if (!p) return;
+    setDocs((cur) => {
+      const seen = new Set(cur.map((d) => d.id));
+      const merged = [...cur, ...p.items.filter((d) => !seen.has(d.id))];
+      docsShown.current = merged.length;
+      return merged;
+    });
+    setDocsTotal(p.total);
+  }
+
+  async function loadMoreProcessed() {
+    const p = await api
+      .listProcessed({ status: processedStatus || undefined, limit: PROCESSED_PAGE, offset: processed.length })
+      .catch(() => null);
+    if (!p) return;
+    setProcessed((cur) => {
+      const seen = new Set(cur.map((r) => r.id));
+      const merged = [...cur, ...p.items.filter((r) => !seen.has(r.id))];
+      processedShown.current = merged.length;
+      return merged;
+    });
+    setProcessedTotal(p.total);
+  }
 
   // auto-refresh: polling ogni 15s SOLO a scheda visibile + refresh immediato
   // quando l'utente torna sul tab (le mail inoltrate arrivano da sole: la
   // dashboard deve mostrarle senza F5)
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
   useEffect(() => {
     const iv = setInterval(() => {
-      if (document.visibilityState === "visible") reload();
+      if (document.visibilityState === "visible") reloadRef.current();
     }, 15_000);
     const onVisible = () => {
-      if (document.visibilityState === "visible") reload();
+      if (document.visibilityState === "visible") reloadRef.current();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
@@ -325,8 +488,35 @@ export function Dashboard() {
       {/* Storico scansioni */}
       <ScanHistory history={history} onChanged={reload} />
 
+      {/* Filtri (nascosti finché non c'è almeno un documento nell'archivio) */}
+      {(docsTotal > 0 || isFiltered(filters)) && (
+        <DocFilters
+          filters={filters}
+          qDraft={qDraft}
+          onQ={setQDraft}
+          onChange={setFilters}
+          shown={docs.length}
+          total={docsTotal}
+        />
+      )}
+
       {/* Documenti */}
-      {docs.length === 0 ? (
+      {docs.length === 0 && isFiltered(filters) && !docsLoading ? (
+        <div className="mt-6 rounded-2xl border border-dashed border-border p-12 text-center">
+          <Search className="mx-auto size-8 text-muted-foreground" />
+          <p className="mt-4 text-muted-foreground">Nessun documento corrisponde ai filtri.</p>
+          <button
+            onClick={() => {
+              setQDraft("");
+              setFilters(DEFAULT_FILTERS);
+            }}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-1.5 text-sm transition-colors hover:border-accent"
+          >
+            <X className="size-3.5" />
+            Azzera filtri
+          </button>
+        </div>
+      ) : docs.length === 0 && !docsLoading ? (
         <div className="mt-8 rounded-2xl border border-dashed border-border p-12 text-center">
           <FileText className="mx-auto size-8 text-muted-foreground" />
           <p className="mt-4 text-muted-foreground">
@@ -350,17 +540,98 @@ export function Dashboard() {
           </p>
         </div>
       ) : (
-        <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {docs.map((d) => (
-            <DocCard key={d.id} doc={d} onChanged={reload} onNeedsReauth={() => setNeedsReauth(true)} />
-          ))}
-        </div>
+        <>
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {docs.map((d) => (
+              <DocCard key={d.id} doc={d} onChanged={reload} onNeedsReauth={() => setNeedsReauth(true)} />
+            ))}
+          </div>
+          {docs.length < docsTotal && (
+            <div className="mt-6 flex justify-center">
+              <button
+                onClick={loadMoreDocs}
+                className="rounded-full border border-border px-5 py-2 text-sm transition-colors hover:border-accent"
+              >
+                Carica altri ({docsTotal - docs.length} rimanenti)
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Log mail processate */}
-      {processed.length > 0 && (
-        <ProcessedLog processed={processed} onChanged={reload} />
+      {(processed.length > 0 || processedStatus) && (
+        <ProcessedLog
+          processed={processed}
+          total={processedTotal}
+          status={processedStatus}
+          onStatus={setProcessedStatus}
+          onMore={loadMoreProcessed}
+          onChanged={reload}
+        />
       )}
+    </div>
+  );
+}
+
+/* ───────────────── Filtri documenti ───────────────── */
+
+const selectCls =
+  "rounded-full border border-border bg-card px-3.5 py-1.5 text-sm text-foreground outline-none focus:border-accent";
+
+function DocFilters({
+  filters,
+  qDraft,
+  onQ,
+  onChange,
+  shown,
+  total,
+}: {
+  filters: GridFilters;
+  qDraft: string;
+  onQ: (q: string) => void;
+  onChange: (p: Partial<GridFilters>) => void;
+  shown: number;
+  total: number;
+}) {
+  return (
+    <div className="mt-10 flex flex-wrap items-center gap-2">
+      <label className="relative min-w-[220px] flex-1 sm:max-w-xs">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="search"
+          value={qDraft}
+          onChange={(e) => onQ(e.target.value)}
+          placeholder="Cerca cliente, numero, oggetto…"
+          className="w-full rounded-full border border-border bg-card py-1.5 pl-9 pr-3.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-accent"
+        />
+      </label>
+      <select className={selectCls} value={filters.type} onChange={(e) => onChange({ type: e.target.value as GridFilters["type"] })}>
+        <option value="">Tutti i tipi</option>
+        <option value="preventivo">Preventivi</option>
+        <option value="ordine">Ordini</option>
+        <option value="fattura">Fatture</option>
+      </select>
+      <select className={selectCls} value={filters.status} onChange={(e) => onChange({ status: e.target.value as GridFilters["status"] })}>
+        <option value="">Tutti gli stati</option>
+        <option value="da_inviare">Da inviare</option>
+        <option value="bozza">Bozza in Gmail</option>
+        <option value="inviato">Inviati</option>
+      </select>
+      <select className={selectCls} value={filters.period} onChange={(e) => onChange({ period: e.target.value as Period })}>
+        {(Object.keys(PERIOD_LABEL) as Period[]).map((p) => (
+          <option key={p} value={p}>{PERIOD_LABEL[p]}</option>
+        ))}
+      </select>
+      <select className={selectCls} value={filters.sort} onChange={(e) => onChange({ sort: e.target.value as DocumentSort })}>
+        <option value="recent">Più recenti</option>
+        <option value="oldest">Più vecchi</option>
+        <option value="customer">Per cliente</option>
+        <option value="total">Per totale</option>
+      </select>
+      <span className="ml-auto font-mono text-xs text-muted-foreground">
+        {total === 0 ? "0 documenti" : shown < total ? `${shown} di ${total}` : `${total} ${total === 1 ? "documento" : "documenti"}`}
+      </span>
     </div>
   );
 }
@@ -482,37 +753,70 @@ function ScanRunRow({ run, first, onChanged }: { run: ScanRun; first: boolean; o
 
 /* ───────────────── Log mail processate: espandibile, con Riprova ───────────────── */
 
-function ProcessedLog({ processed, onChanged }: { processed: ProcessedItem[]; onChanged: () => void }) {
-  const [hideSkipped, setHideSkipped] = useState(false);
-  const skippedCount = processed.filter((p) => p.status === "skipped").length;
-  const visible = hideSkipped ? processed.filter((p) => p.status !== "skipped") : processed;
+const PROCESSED_FILTERS: { value: ProcessedItem["status"] | ""; label: string }[] = [
+  { value: "", label: "Tutte" },
+  { value: "done", label: "OK" },
+  { value: "skipped", label: "Ignorate" },
+  { value: "error", label: "Errori" },
+];
 
+function ProcessedLog({
+  processed,
+  total,
+  status,
+  onStatus,
+  onMore,
+  onChanged,
+}: {
+  processed: ProcessedItem[];
+  total: number;
+  status: ProcessedItem["status"] | "";
+  onStatus: (s: ProcessedItem["status"] | "") => void;
+  onMore: () => void;
+  onChanged: () => void;
+}) {
   return (
     <div className="mt-14">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-mono text-sm uppercase tracking-[0.16em] text-muted-foreground">
           Mail processate
+          <span className="ml-2 normal-case tracking-normal text-muted-foreground/70">
+            {processed.length < total ? `${processed.length} di ${total}` : total}
+          </span>
         </h2>
-        {skippedCount > 0 && (
-          <button
-            onClick={() => setHideSkipped((v) => !v)}
-            className={cn(
-              "rounded-full border px-3.5 py-1 text-xs transition-colors",
-              hideSkipped ? "border-accent text-foreground" : "border-border text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {hideSkipped ? `Mostra ignorate (${skippedCount})` : `Nascondi ignorate (${skippedCount})`}
-          </button>
-        )}
+        <div className="flex gap-1.5">
+          {PROCESSED_FILTERS.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => onStatus(f.value)}
+              className={cn(
+                "rounded-full border px-3.5 py-1 text-xs transition-colors",
+                status === f.value ? "border-accent text-foreground" : "border-border text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="mt-4 overflow-hidden rounded-xl border border-border">
-        {visible.map((p, i) => (
+        {processed.map((p, i) => (
           <ProcessedRow key={p.id} p={p} first={i === 0} onChanged={onChanged} />
         ))}
-        {visible.length === 0 && (
-          <p className="px-4 py-3 text-sm text-muted-foreground">Nessuna riga da mostrare col filtro attivo.</p>
+        {processed.length === 0 && (
+          <p className="px-4 py-3 text-sm text-muted-foreground">Nessuna mail con questo esito.</p>
         )}
       </div>
+      {processed.length < total && (
+        <div className="mt-4 flex justify-center">
+          <button
+            onClick={onMore}
+            className="rounded-full border border-border px-5 py-2 text-sm transition-colors hover:border-accent"
+          >
+            Carica altre ({total - processed.length} rimanenti)
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -597,6 +901,16 @@ function ProcessedRow({ p, first, onChanged }: { p: ProcessedItem; first: boolea
           {p.status === "done" && p.detail && <p className="mt-2 text-muted-foreground">{p.detail}</p>}
 
           <div className="mt-3 flex flex-wrap items-center gap-3">
+            {p.status === "done" && p.document_id !== null && (
+              <Link
+                to={`/documents/${p.document_id}/edit`}
+                className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium"
+                style={{ background: "var(--azzurro)", color: "var(--nero)" }}
+              >
+                <FileText className="size-3.5" />
+                Apri documento
+              </Link>
+            )}
             {rowMe?.mailMode !== "inoltro" && (
               <a
                 href={gmailUrl(p.gmail_message_id)}
