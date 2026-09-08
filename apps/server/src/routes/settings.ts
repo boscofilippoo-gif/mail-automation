@@ -26,6 +26,7 @@ export const settingsRouter = Router();
 settingsRouter.use(requireAuth);
 
 const HEX_RE = /^#[0-9a-f]{6}$/i;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // charset base64 attribute-safe: non può contenere " < > per costruzione
 const LOGO_RE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
 const LOGO_MAX_CHARS = 700_000; // ≈ 500KB binari
@@ -95,6 +96,21 @@ function validateSettings(body: Record<string, unknown>, allowCustom = false): P
   }
   if ("auto_draft" in body) {
     out.auto_draft = body.auto_draft ? 1 : 0;
+  }
+  if ("notify_enabled" in body) {
+    out.notify_enabled = body.notify_enabled ? 1 : 0;
+  }
+  if ("notify_errors" in body) {
+    out.notify_errors = body.notify_errors ? 1 : 0;
+  }
+  if ("notify_email" in body) {
+    const v = body.notify_email;
+    if (v === null || v === "") out.notify_email = null;
+    else if (typeof v === "string" && EMAIL_RE.test(v.trim()) && v.trim().length <= 200) {
+      out.notify_email = v.trim().toLowerCase();
+    } else {
+      throw new Error("Indirizzo per le notifiche non valido.");
+    }
   }
 
   return out;

@@ -34,6 +34,7 @@ import {
 } from "../repo.js";
 import { generateBreweryXlsx } from "../xlsx/generate.js";
 import { mapOrderToRows } from "../ai/mapBrewery.js";
+import { notifyDailyDigest } from "./notify.js";
 import type { DocType, PriceListItem, UserSettings } from "../types.js";
 
 const GMAIL_READONLY = "https://www.googleapis.com/auth/gmail.readonly";
@@ -406,6 +407,7 @@ export async function scanAllUsers(): Promise<void> {
       const r = await scanUser(id, DAILY_SCAN_OPTS, runId);
       updateScanRunCounters(runId, r);
       console.log(`[scan] user ${id}:`, r);
+      notifyDailyDigest(id, { id: runId }, r); // best-effort, non blocca
     } catch (err) {
       console.error(`[scan] scan fallito per user ${id}:`, err);
     }

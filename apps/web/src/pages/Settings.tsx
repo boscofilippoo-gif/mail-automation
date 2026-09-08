@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
-import { Check, FileSpreadsheet, FileUp, ImagePlus, Loader2, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { Bell, Check, FileSpreadsheet, FileUp, ImagePlus, Loader2, Sparkles, Trash2, Wand2 } from "lucide-react";
 
 import {
   api,
@@ -11,6 +11,7 @@ import {
   type UserSettings,
 } from "@/api";
 import { cn } from "@/lib/utils";
+import { ToggleSwitch } from "@/components/ToggleSwitch";
 
 /** Stato del collegamento posta: modalità attiva, alias, cambio. */
 function MailboxSection() {
@@ -146,6 +147,7 @@ export function Settings() {
       <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_420px]">
         <div className="space-y-10">
           <MailboxSection />
+          <NotificationsSection draft={draft} onPatch={patch} />
           <TemplateGallery
             value={draft.template_id}
             accent={draft.accent_color}
@@ -177,6 +179,71 @@ export function Settings() {
         <LivePreview draft={draft} />
       </div>
     </div>
+  );
+}
+
+/* ───────────────────────── Notifiche email ───────────────────────── */
+
+function NotificationsSection({
+  draft,
+  onPatch,
+}: {
+  draft: UserSettings;
+  onPatch: (p: Partial<UserSettings>) => void;
+}) {
+  const { me } = useOutletContext<{ me: Me | null }>();
+  const on = Boolean(draft.notify_enabled);
+  const inoltro = me?.mailMode === "inoltro";
+  return (
+    <section>
+      <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Notifiche email</h2>
+      <div className="mt-3 rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-start justify-between gap-6">
+          <div className="flex items-start gap-4">
+            <Bell className="mt-1 size-5 shrink-0" style={{ color: "var(--azzurro)" }} />
+            <div>
+              <h3 className="font-semibold">Avvisami quando c'è un documento nuovo</h3>
+              <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
+                {inoltro
+                  ? "Ricevi un'email ogni volta che una mail inoltrata diventa un documento, con cliente, totale e il link per controllarlo."
+                  : "Dopo la scansione automatica del mattino ricevi un riepilogo dei documenti generati, con i link per controllarli. Le scansioni manuali non mandano nulla."}
+              </p>
+            </div>
+          </div>
+          <ToggleSwitch checked={on} onToggle={() => onPatch({ notify_enabled: on ? 0 : 1 })} />
+        </div>
+
+        {on && (
+          <div className="mt-5 space-y-4 border-t border-border pt-5">
+            <label className="flex items-start justify-between gap-6">
+              <span>
+                <span className="block text-sm font-medium">Avvisami anche degli errori</span>
+                <span className="mt-0.5 block text-sm text-muted-foreground">
+                  Se una mail non riesce a diventare documento, ti dico quale e perché.
+                </span>
+              </span>
+              <ToggleSwitch
+                checked={Boolean(draft.notify_errors)}
+                onToggle={() => onPatch({ notify_errors: draft.notify_errors ? 0 : 1 })}
+              />
+            </label>
+            <div>
+              <label className="block text-sm font-medium">Indirizzo di destinazione</label>
+              <input
+                className={cn(inputCls, "mt-1.5")}
+                type="email"
+                placeholder={me?.email ?? "nome@azienda.it"}
+                value={draft.notify_email ?? ""}
+                onChange={(e) => onPatch({ notify_email: e.target.value || null })}
+              />
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Vuoto = l'indirizzo con cui hai fatto login{me?.email ? ` (${me.email})` : ""}.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 

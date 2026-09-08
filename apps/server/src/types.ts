@@ -119,6 +119,9 @@ export interface UserSettings extends TemplateSettings {
   smart_scan: number; // 0 | 1 (come keywords.active)
   email_signature: string | null; // firma appesa alle bozze di risposta
   auto_draft: number; // 0 | 1: crea la bozza automaticamente dopo lo scan
+  notify_enabled: number; // 0 | 1: email all'utente per documenti nuovi (inoltro) e riepilogo scan
+  notify_email: string | null; // destinatario alternativo (null = email dell'account)
+  notify_errors: number; // 0 | 1: avvisa anche delle mail andate in errore
 }
 
 /**
@@ -138,6 +141,9 @@ export const DEFAULT_SETTINGS: UserSettings = {
   smart_scan: 0,
   email_signature: null,
   auto_draft: 0,
+  notify_enabled: 1,
+  notify_email: null,
+  notify_errors: 1,
 };
 
 /**

@@ -169,6 +169,20 @@ Google). Per attivare l'inoltro in produzione servono questi passi una tantum:
 5. **Render → Environment**: `BREVO_API_KEY`, `INBOUND_WEBHOOK_KEY` (32 hex random),
    `INBOUND_DOMAIN=inbox.borustudio.it`, `MAIL_FROM`, `MAIL_FROM_NAME`.
 
-Senza `BREVO_API_KEY` i magic link vengono stampati nei log del server (mock dev).
+Senza `BREVO_API_KEY` i magic link e le notifiche vengono stampati nei log del server (mock dev).
+
+## Notifiche email
+
+Attive di default, configurabili in **Impostazioni → Notifiche email** (on/off, anche gli
+errori, indirizzo alternativo). Partono via Brevo dallo stesso `MAIL_FROM` dei magic link:
+
+- **modalità inoltro**: una mail per ogni documento generato (cliente, totale, righe senza
+  prezzo, link all'editor) e, se attivo, per ogni mail andata in errore (motivo + link al log);
+- **scan giornaliero delle 07:00**: un solo riepilogo per utente, inviato solo se ci sono
+  documenti nuovi o errori;
+- **scan manuale, per periodo e "Riprova"**: nessuna mail, l'utente sta già guardando la dashboard.
+
+Logica in `apps/server/src/jobs/notify.ts`, best-effort: un invio fallito finisce nei log e non
+tocca l'elaborazione.
 Nota Render free: se il servizio dorme, il primo webhook può andare in timeout — i
 retry di Brevo + l'idempotenza rendono la cosa innocua.

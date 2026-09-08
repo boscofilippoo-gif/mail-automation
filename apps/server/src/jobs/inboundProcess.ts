@@ -11,6 +11,7 @@ import {
   setPendingConfirmation,
 } from "../repo.js";
 import { processSingleMail } from "./dailyScan.js";
+import { notifyInboundOutcome } from "./notify.js";
 
 /** Elemento del payload webhook inbound di Brevo (campi che usiamo). */
 export interface BrevoInboundItem {
@@ -174,10 +175,11 @@ async function processOne(item: BrevoInboundItem, inboundDomain: string): Promis
     subject.toLowerCase().includes(k.term.toLowerCase()),
   );
   if (kw) {
-    await processSingleMail({
+    const outcome = await processSingleMail({
       userId, client: null, mail, docType: kw.doc_type, matchedKeyword: kw.term,
       settings, listino: listino?.items,
     });
+    notifyInboundOutcome({ userId, outcome, subject, from: sender, docType: kw.doc_type });
     return;
   }
 
@@ -193,10 +195,11 @@ async function processOne(item: BrevoInboundItem, inboundDomain: string): Promis
 
   const cls = await classifyEmail(mail);
   if (cls.relevant && cls.doc_type && cls.confidence >= CONFIDENCE_THRESHOLD) {
-    await processSingleMail({
+    const outcome = await processSingleMail({
       userId, client: null, mail, docType: cls.doc_type, matchedKeyword: "auto",
       settings, listino: listino?.items, category: cls.category, detail: cls.reason,
     });
+    notifyInboundOutcome({ userId, outcome, subject, from: sender, docType: cls.doc_type });
   } else {
     recordProcessed({
       userId, gmailMessageId: mailId, subject, matchedKeyword: "auto",

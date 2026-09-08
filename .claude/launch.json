@@ -4,7 +4,19 @@
     {
       "name": "mail-automation-web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:web"],
+      "runtimeArgs": [
+        "run",
+        "dev:web"
+      ],
+      "port": 5273
+    },
+    {
+      "name": "dev",
+      "runtimeExecutable": "zsh",
+      "runtimeArgs": [
+        "-ic",
+        "PORT=4000 npm run dev"
+      ],
       "port": 5273
     }
   ]

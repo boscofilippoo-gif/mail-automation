@@ -216,6 +216,10 @@ export function migrate(): void {
   ensureColumn("documents", "sort_assignments_json", "sort_assignments_json TEXT");
   // estrazione AI originale, congelata al primo salvataggio manuale (null = mai modificato)
   ensureColumn("documents", "original_json", "original_json TEXT");
+  // notifiche email: attive di default, destinatario alternativo opzionale
+  ensureColumn("user_settings", "notify_enabled", "notify_enabled INTEGER NOT NULL DEFAULT 1");
+  ensureColumn("user_settings", "notify_email", "notify_email TEXT");
+  ensureColumn("user_settings", "notify_errors", "notify_errors INTEGER NOT NULL DEFAULT 1");
 
   // ── login universale / doppia modalità casella ──
   rebuildUsersIfNeeded(); // google_sub nullable su DB pre-esistenti

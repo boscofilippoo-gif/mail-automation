@@ -598,6 +598,9 @@ export function getUserSettings(userId: number): UserSettings {
     smart_scan: row.smart_scan,
     email_signature: row.email_signature,
     auto_draft: row.auto_draft,
+    notify_enabled: row.notify_enabled,
+    notify_email: row.notify_email,
+    notify_errors: row.notify_errors,
   };
 }
 
@@ -607,16 +610,17 @@ export function upsertUserSettings(userId: number, patch: Partial<UserSettings>)
     `INSERT INTO user_settings
        (user_id, template_id, accent_color, company_name, company_address, company_vat,
         company_email, company_phone, footer_note, logo_data_url, smart_scan,
-        email_signature, auto_draft, updated_at)
+        email_signature, auto_draft, notify_enabled, notify_email, notify_errors, updated_at)
      VALUES
        (@user_id, @template_id, @accent_color, @company_name, @company_address, @company_vat,
         @company_email, @company_phone, @footer_note, @logo_data_url, @smart_scan,
-        @email_signature, @auto_draft, datetime('now'))
+        @email_signature, @auto_draft, @notify_enabled, @notify_email, @notify_errors, datetime('now'))
      ON CONFLICT(user_id) DO UPDATE SET
        template_id = @template_id, accent_color = @accent_color, company_name = @company_name,
        company_address = @company_address, company_vat = @company_vat, company_email = @company_email,
        company_phone = @company_phone, footer_note = @footer_note, logo_data_url = @logo_data_url,
        smart_scan = @smart_scan, email_signature = @email_signature, auto_draft = @auto_draft,
+       notify_enabled = @notify_enabled, notify_email = @notify_email, notify_errors = @notify_errors,
        updated_at = datetime('now')`,
   ).run({ user_id: userId, ...merged });
   return merged;

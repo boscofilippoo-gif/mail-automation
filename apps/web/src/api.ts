@@ -193,6 +193,9 @@ export interface UserSettings {
   smart_scan: number;
   email_signature: string | null;
   auto_draft: number;
+  notify_enabled: number;
+  notify_email: string | null;
+  notify_errors: number;
   has_custom_template?: boolean;
 }
 
