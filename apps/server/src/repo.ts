@@ -196,13 +196,14 @@ export function insertDocument(d: {
   extractedJson: string;
   pdfPath: string;
   sourceMessageId: string;
+  reviewJson?: string | null; // ReviewFlag[] serializzato, null se niente da controllare
 }): DocumentRecord {
   const info = db
     .prepare(
-      `INSERT INTO documents (user_id, type, extracted_json, pdf_path, source_message_id)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO documents (user_id, type, extracted_json, pdf_path, source_message_id, review_json)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
-    .run(d.userId, d.type, d.extractedJson, d.pdfPath, d.sourceMessageId);
+    .run(d.userId, d.type, d.extractedJson, d.pdfPath, d.sourceMessageId, d.reviewJson ?? null);
   return db
     .prepare(`SELECT * FROM documents WHERE id = ?`)
     .get(info.lastInsertRowid) as DocumentRecord;
@@ -223,6 +224,7 @@ export interface DocumentQuery {
   from?: string; // ISO date (inclusa)
   to?: string; // ISO date (inclusa)
   sort?: DocumentSort;
+  review?: "pending"; // solo documenti con campi incerti ancora da controllare
   limit: number;
   offset: number;
 }
@@ -254,6 +256,9 @@ export function queryDocuments(userId: number, qy: DocumentQuery): { items: Docu
   if (qy.to) {
     where.push("d.created_at <= @to");
     params.to = `${qy.to} 23:59:59`;
+  }
+  if (qy.review === "pending") {
+    where.push("d.review_json IS NOT NULL AND d.review_json <> '[]'");
   }
   if (qy.q) {
     // escape dei jolly LIKE: l'utente cerca testo, non pattern
@@ -351,6 +356,11 @@ export function updateDocument(
             extracted_json = ?, pdf_path = ?
       WHERE id = ? AND user_id = ?`,
   ).run(extractedJson, pdfPath, id, userId);
+}
+
+/** Azzera i campi incerti: una modifica manuale vale come verifica umana. */
+export function clearDocumentReview(userId: number, id: number): void {
+  db.prepare(`UPDATE documents SET review_json = NULL WHERE id = ? AND user_id = ?`).run(id, userId);
 }
 
 /** Aggiorna solo il path del PDF (rigenerato dallo stesso JSON): NON è una modifica manuale. */

@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 import { env } from "../env.js";
-import type { DocType, ExtractedDocument, PriceListItem } from "../types.js";
+import type { DocType, ExtractedDocument, PriceListItem, ReviewFlag } from "../types.js";
 
 const client = new Anthropic({ apiKey: env.anthropic.apiKey });
 
@@ -41,6 +41,27 @@ const DOCUMENT_SCHEMA = {
     tax: { type: ["number", "null"], description: "Importo imposta/IVA, se ricavabile" },
     total: { type: ["number", "null"] },
     notes: { type: ["string", "null"], description: "Eventuali note o condizioni rilevanti" },
+    uncertain_fields: {
+      type: "array",
+      description:
+        "Campi su cui NON sei sicuro: valore dedotto o stimato, ambiguo, in conflitto tra punti diversi della mail, o assente ma richiesto. Vuoto se tutto è esplicito. NON elencare i prezzi null per articoli fuori listino (sono già segnalati).",
+      items: {
+        type: "object",
+        properties: {
+          field: {
+            type: "string",
+            description:
+              "Nome del campo: 'customer_name', 'customer_email', 'customer_vat', 'customer_address', 'document_number', 'document_date', 'currency', 'tax', 'total', 'notes', oppure 'line_items[N].description' / 'line_items[N].quantity' / 'line_items[N].unit_price' con N indice 0-based della riga.",
+          },
+          reason: {
+            type: "string",
+            description: "Motivo in una frase, in italiano, rivolto a chi controlla (es. 'La mail dice \"qualche fusto\": quantità ipotizzata 2').",
+          },
+        },
+        required: ["field", "reason"],
+        additionalProperties: false,
+      },
+    },
   },
   required: [
     "doc_type",
@@ -56,6 +77,7 @@ const DOCUMENT_SCHEMA = {
     "tax",
     "total",
     "notes",
+    "uncertain_fields",
   ],
   additionalProperties: false,
 } as const;
@@ -68,7 +90,8 @@ Regole:
 - Gli importi sono numeri (niente simboli di valuta nel valore numerico).
 - Se la valuta non è esplicita, usa "EUR".
 - Per ogni riga calcola 'total' = quantity * unit_price quando non indicato esplicitamente.
-- 'doc_type' deve riflettere il tipo richiesto dal chiamante.`;
+- 'doc_type' deve riflettere il tipo richiesto dal chiamante.
+- In 'uncertain_fields' dichiara ogni campo che hai dedotto, stimato o letto in modo ambiguo, con un motivo breve e concreto: chi legge deve capire subito cosa controllare. Se un campo è esplicito e univoco nella mail, non elencarlo.`;
 
 const LISTINO_RULES = `
 
@@ -115,16 +138,43 @@ function listinoBlock(items: PriceListItem[]): string {
   return `\n\nLISTINO PREZZI (CODICE | DESCRIZIONE | UNITÀ | PREZZO):\n${lines.join("\n")}`;
 }
 
+export interface ExtractionResult {
+  data: ExtractedDocument;
+  review: ReviewFlag[]; // campi incerti dichiarati dal modello (già validati)
+}
+
+const FIELD_RE = /^(customer_name|customer_email|customer_vat|customer_address|document_number|document_date|currency|subtotal|tax|total|notes|line_items\[\d+\]\.(description|quantity|unit_price))$/;
+
+/** Tiene solo i flag ben formati e riferiti a righe esistenti; tronca i motivi. */
+function sanitizeReview(raw: unknown, lineCount: number): ReviewFlag[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ReviewFlag[] = [];
+  const seen = new Set<string>();
+  for (const r of raw) {
+    const o = r as { field?: unknown; reason?: unknown };
+    if (typeof o.field !== "string" || typeof o.reason !== "string") continue;
+    const field = o.field.trim();
+    if (!FIELD_RE.test(field) || seen.has(field)) continue;
+    const idx = field.match(/^line_items\[(\d+)\]/);
+    if (idx && Number(idx[1]) >= lineCount) continue;
+    seen.add(field);
+    out.push({ field, reason: o.reason.trim().slice(0, 240) });
+    if (out.length >= 30) break;
+  }
+  return out;
+}
+
 /**
  * Estrae i dati strutturati dal testo di una mail usando Claude.
  * `expectedType` è il tipo associato alla keyword/classificazione.
  * `listino`, se presente, guida i prezzi: mai inventati, solo dal listino.
+ * Oltre ai dati restituisce i campi che il modello dichiara incerti.
  */
 export async function extractDocument(
   bodyText: string,
   expectedType: DocType,
   listino?: PriceListItem[],
-): Promise<ExtractedDocument> {
+): Promise<ExtractionResult> {
   const hasListino = Boolean(listino && listino.length > 0);
   const listinoText = hasListino ? listinoBlock(prefilterListino(listino!, bodyText)) : "";
 
@@ -153,8 +203,9 @@ export async function extractDocument(
     throw new Error("Claude non ha restituito dati strutturati.");
   }
 
-  const data = toolUse.input as ExtractedDocument;
+  const { uncertain_fields, ...rest } = toolUse.input as ExtractedDocument & { uncertain_fields?: unknown };
+  const data = rest as ExtractedDocument;
   // Garantiamo coerenza del tipo con la keyword che ha fatto match.
   data.doc_type = expectedType;
-  return data;
+  return { data, review: sanitizeReview(uncertain_fields, data.line_items?.length ?? 0) };
 }

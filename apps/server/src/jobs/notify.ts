@@ -55,6 +55,13 @@ export function notifyInboundOutcome(args: {
       if (!doc) return;
       const data = JSON.parse(doc.extracted_json) as ExtractedDocument;
       const missing = data.line_items.filter((li) => li.unit_price === null).length;
+      let uncertain = 0;
+      try {
+        const rv = doc.review_json ? JSON.parse(doc.review_json) : [];
+        uncertain = Array.isArray(rv) ? rv.length : 0;
+      } catch {
+        /* review_json corrotto: nessun avviso */
+      }
       const label = DOC_LABEL[docType] ?? docType;
       const who = data.customer_name || "cliente non rilevato";
 
@@ -69,6 +76,11 @@ export function notifyInboundOutcome(args: {
              <tr><td style="padding:4px 16px 4px 0;color:#6b6357">Righe</td><td>${data.line_items.length}</td></tr>
              <tr><td style="padding:4px 16px 4px 0;color:#6b6357">Totale</td><td>${esc(fmtMoney(data.total, data.currency))}</td></tr>
            </table>
+           ${
+             uncertain > 0
+               ? `<p style="background:#fbf1d6;border-radius:12px;padding:12px 16px;font-size:14px;line-height:1.5"><strong>${uncertain === 1 ? "1 campo da controllare" : `${uncertain} campi da controllare`}</strong>: l'AI non era sicura di alcuni valori, li trovi evidenziati nell'editor.</p>`
+               : ""
+           }
            ${
              missing > 0
                ? `<p style="background:#fde8ee;border-radius:12px;padding:12px 16px;font-size:14px;line-height:1.5"><strong>${missing === 1 ? "1 riga è senza prezzo" : `${missing} righe sono senza prezzo`}</strong>: articoli non trovati nel listino, da completare prima di inviare.</p>`

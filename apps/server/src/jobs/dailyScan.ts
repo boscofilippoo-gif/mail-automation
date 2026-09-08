@@ -96,8 +96,9 @@ export async function processSingleMail(args: {
 
   try {
     let extracted;
+    let review;
     try {
-      extracted = await extractDocument(mail.bodyText || mail.subject, docType, listino);
+      ({ data: extracted, review } = await extractDocument(mail.bodyText || mail.subject, docType, listino));
     } catch (e) {
       throw new Error(`Estrazione dati fallita: ${msg(e)}`);
     }
@@ -115,6 +116,7 @@ export async function processSingleMail(args: {
       extractedJson: JSON.stringify(extracted),
       pdfPath,
       sourceMessageId: mail.id,
+      reviewJson: review.length ? JSON.stringify(review) : null,
     });
 
     // Se l'utente ha un modulo Excel di birrificio, genera anche l'.xlsx.

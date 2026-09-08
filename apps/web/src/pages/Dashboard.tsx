@@ -7,6 +7,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  HelpCircle,
   Eye,
   FileSpreadsheet,
   FileText,
@@ -114,8 +115,9 @@ interface GridFilters {
   status: SentStatus | "";
   period: Period;
   sort: DocumentSort;
+  review: boolean; // solo documenti con campi da controllare
 }
-const DEFAULT_FILTERS: GridFilters = { q: "", type: "", status: "", period: "all", sort: "recent" };
+const DEFAULT_FILTERS: GridFilters = { q: "", type: "", status: "", period: "all", sort: "recent", review: false };
 
 function readFilters(sp: URLSearchParams): GridFilters {
   const pick = <T extends string>(v: string | null, allowed: readonly T[], fb: T): T =>
@@ -126,6 +128,7 @@ function readFilters(sp: URLSearchParams): GridFilters {
     status: pick(sp.get("status"), ["da_inviare", "bozza", "inviato", ""] as const, ""),
     period: pick(sp.get("period"), ["7d", "30d", "month", "all"] as const, "all"),
     sort: pick(sp.get("sort"), ["recent", "oldest", "customer", "total"] as const, "recent"),
+    review: sp.get("review") === "1",
   };
 }
 
@@ -135,12 +138,13 @@ function toApiFilters(f: GridFilters): DocumentFilters {
     type: f.type || undefined,
     status: f.status || undefined,
     sort: f.sort,
+    review: f.review ? "pending" : undefined,
     ...periodRange(f.period),
   };
 }
 
 function isFiltered(f: GridFilters): boolean {
-  return Boolean(f.q || f.type || f.status || f.period !== "all");
+  return Boolean(f.q || f.type || f.status || f.period !== "all" || f.review);
 }
 
 export function Dashboard() {
@@ -161,7 +165,7 @@ export function Dashboard() {
     const next = { ...filters, ...patch };
     const sp = new URLSearchParams();
     for (const [k, v] of Object.entries(next)) {
-      if (v && v !== DEFAULT_FILTERS[k as keyof GridFilters]) sp.set(k, String(v));
+      if (v && v !== DEFAULT_FILTERS[k as keyof GridFilters]) sp.set(k, v === true ? "1" : String(v));
     }
     setSearchParams(sp, { replace: true });
   }
@@ -629,6 +633,18 @@ function DocFilters({
         <option value="customer">Per cliente</option>
         <option value="total">Per totale</option>
       </select>
+      <button
+        onClick={() => onChange({ review: !filters.review })}
+        aria-pressed={filters.review}
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-colors",
+          filters.review ? "text-foreground" : "border-border text-muted-foreground hover:text-foreground",
+        )}
+        style={filters.review ? { borderColor: "#e2b53f" } : undefined}
+      >
+        <HelpCircle className="size-4" style={{ color: "#e2b53f" }} />
+        Da controllare
+      </button>
       <span className="ml-auto font-mono text-xs text-muted-foreground">
         {total === 0 ? "0 documenti" : shown < total ? `${shown} di ${total}` : `${total} ${total === 1 ? "documento" : "documenti"}`}
       </span>
@@ -1094,6 +1110,17 @@ function DocCard({
           <span className="rounded-full px-2.5 py-0.5 text-xs" style={{ background: STATUS_BG[doc.sentStatus] }}>
             {STATUS_LABEL[doc.sentStatus]}
           </span>
+          {(doc.review?.length ?? 0) > 0 && (
+            <Link
+              to={`/documents/${doc.id}/edit`}
+              title={doc.review!.map((r) => r.reason).join("\n")}
+              className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs"
+              style={{ background: "color-mix(in oklab, #e2b53f 28%, transparent)" }}
+            >
+              <HelpCircle className="size-3" />
+              Da controllare ({doc.review!.length})
+            </Link>
+          )}
         </div>
         <span className="inline-flex items-center gap-2 font-mono text-xs text-muted-foreground/70">
           {new Date(doc.createdAt + "Z").toLocaleDateString("it-IT")}

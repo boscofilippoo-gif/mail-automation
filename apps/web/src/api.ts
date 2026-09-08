@@ -91,6 +91,12 @@ export type ListinoResult = ListinoState | { error: string; needsReauth?: boolea
 
 export type SentStatus = "da_inviare" | "bozza" | "inviato";
 
+/** Campo su cui l'AI non era sicura: "customer_vat", "total", "line_items[2].quantity"… */
+export interface ReviewFlag {
+  field: string;
+  reason: string;
+}
+
 export interface DocumentItem {
   id: number;
   type: DocType;
@@ -101,6 +107,7 @@ export interface DocumentItem {
   draftId: string | null;
   breweryCount?: number; // n° moduli birrificio: 0 nessuno, 1 download diretto, ≥2 smistamento (solo ordini)
   edited?: boolean; // true se modificato a mano almeno una volta (esiste l'originale AI)
+  review?: ReviewFlag[]; // campi incerti ancora da controllare (vuoto dopo un salvataggio)
   data: ExtractedDocument;
 }
 
@@ -170,6 +177,7 @@ export interface DocumentFilters {
   from?: string; // YYYY-MM-DD
   to?: string; // YYYY-MM-DD
   sort?: DocumentSort;
+  review?: "pending"; // solo documenti con campi da controllare
   limit?: number;
   offset?: number;
 }
@@ -336,6 +344,7 @@ export const api = {
       sourceMessageId: string;
       data: ExtractedDocument;
       originalData: ExtractedDocument | null; // estrazione AI originale, null se mai modificato
+      review: ReviewFlag[]; // campi incerti segnalati dall'AI
     }>(`/api/documents/${id}`),
   deleteDocument: (id: number) => request<{ ok: true }>(`/api/documents/${id}`, { method: "DELETE" }),
   updateDocument: (id: number, data: ExtractedDocument) =>

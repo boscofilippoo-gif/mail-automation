@@ -75,6 +75,7 @@ export interface DocumentRecord {
   xlsx_path: string | null; // Excel del birrificio, se l'utente usa un modulo
   sort_assignments_json: string | null; // smistamento {itemIndex→brewery_key} confermato
   original_json: string | null; // estrazione AI originale, salvata alla prima modifica manuale
+  review_json: string | null; // ReviewFlag[] dei campi incerti; null/[] = niente da controllare
 }
 
 /** Assegnazione di una riga d'ordine a una riga di un modulo birrificio (smistamento). */
@@ -184,6 +185,16 @@ export interface PriceListMeta {
 }
 
 /** Struttura dei dati estratti da Claude a partire dal testo della mail. */
+/**
+ * Campo su cui l'AI non era sicura, con il motivo in una frase per l'utente.
+ * `field`: nome top-level ("customer_vat", "total"…) oppure "line_items[N].quantity"
+ * (N = indice 0-based della riga).
+ */
+export interface ReviewFlag {
+  field: string;
+  reason: string;
+}
+
 export interface ExtractedDocument {
   doc_type: DocType;
   customer_name: string;

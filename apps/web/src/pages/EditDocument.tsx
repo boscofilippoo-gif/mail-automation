@@ -1,13 +1,40 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, Loader2, Plus, RotateCcw, Send, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, HelpCircle, Loader2, Plus, RotateCcw, Send, Trash2 } from "lucide-react";
 
-import { api, type ExtractedDocument, type LineItem, type Me } from "@/api";
+import { api, type ExtractedDocument, type LineItem, type Me, type ReviewFlag } from "@/api";
 import { cn } from "@/lib/utils";
 import { SourceMailSection } from "@/components/SourceMailSection";
 
 const inputCls =
   "w-full rounded-xl border border-border bg-card px-3.5 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-accent";
+
+/** Giallo "da controllare": non è nella palette, definito qui una volta sola. */
+const WARN = "#e2b53f";
+
+const FIELD_LABEL: Record<string, string> = {
+  customer_name: "Nome cliente",
+  customer_email: "Email cliente",
+  customer_vat: "P.IVA / CF",
+  customer_address: "Indirizzo",
+  document_number: "Numero documento",
+  document_date: "Data",
+  currency: "Valuta",
+  subtotal: "Imponibile",
+  tax: "Imposta",
+  total: "Totale",
+  notes: "Note",
+  description: "descrizione",
+  quantity: "quantità",
+  unit_price: "prezzo",
+};
+
+/** "line_items[2].quantity" → "Riga 3, quantità"; "customer_vat" → "P.IVA / CF". */
+function fieldLabel(field: string): string {
+  const m = field.match(/^line_items\[(\d+)\]\.(\w+)$/);
+  if (m) return `Riga ${Number(m[1]) + 1}, ${FIELD_LABEL[m[2]!] ?? m[2]}`;
+  return FIELD_LABEL[field] ?? field;
+}
 
 /** Ricalcola i totali derivati: riga = qty×prezzo, subtotale = somma non-null, totale = sub+tax. */
 function recalc(doc: ExtractedDocument): ExtractedDocument {
@@ -38,6 +65,12 @@ export function EditDocument() {
   const [sourceMessageId, setSourceMessageId] = useState<string | null>(null);
   // estrazione AI originale: presente solo se il documento è già stato modificato a mano
   const [original, setOriginal] = useState<ExtractedDocument | null>(null);
+  // campi incerti dichiarati dall'AI (si azzerano lato server al salvataggio)
+  const [review, setReview] = useState<ReviewFlag[]>([]);
+  /** Motivo del dubbio per un campo, o undefined se l'AI era sicura. */
+  const doubt = (field: string) => review.find((r) => r.field === field)?.reason;
+  /** Classi + stile per evidenziare un input incerto (bordo giallo). */
+  const warn = (field: string) => (doubt(field) ? { style: { borderColor: WARN }, title: doubt(field) } : {});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +82,7 @@ export function EditDocument() {
         setDocType(d.type);
         setSourceMessageId(d.sourceMessageId ?? null);
         setOriginal(d.originalData ?? null);
+        setReview(d.review ?? []);
       })
       .catch((e) => setError(e.message));
   }, [id]);
@@ -169,6 +203,22 @@ export function EditDocument() {
         </div>
       </div>
       {error && <p className="mt-3 text-sm" style={{ color: "var(--rosa)" }}>{error}</p>}
+      {review.length > 0 && (
+        <div className="mt-4 rounded-xl border px-4 py-3 text-sm" style={{ borderColor: WARN }}>
+          <p className="flex items-center gap-2 font-medium">
+            <HelpCircle className="size-4 shrink-0" style={{ color: WARN }} />
+            {review.length === 1 ? "L'AI non era sicura su 1 campo" : `L'AI non era sicura su ${review.length} campi`}
+            <span className="font-normal text-muted-foreground">— evidenziati in giallo qui sotto. Salvando confermi di averli controllati.</span>
+          </p>
+          <ul className="mt-2 space-y-1 pl-6 text-muted-foreground">
+            {review.map((r) => (
+              <li key={r.field}>
+                <span className="text-foreground">{fieldLabel(r.field)}</span>: {r.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {missingPrices > 0 && (
         <p className="mt-4 inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm" style={{ borderColor: "var(--rosa)" }}>
           <AlertTriangle className="size-4" style={{ color: "var(--rosa)" }} />
@@ -184,10 +234,10 @@ export function EditDocument() {
           <section>
             <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Destinatario</h2>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <input className={inputCls} placeholder="Nome cliente" value={draft.customer_name} onChange={(e) => patch({ customer_name: e.target.value })} />
-              <input className={inputCls} placeholder="P.IVA / CF" value={draft.customer_vat ?? ""} onChange={(e) => patch({ customer_vat: e.target.value || null })} />
-              <input className={cn(inputCls, "sm:col-span-2")} placeholder="Indirizzo" value={draft.customer_address ?? ""} onChange={(e) => patch({ customer_address: e.target.value || null })} />
-              <input className={inputCls} placeholder="Email" value={draft.customer_email ?? ""} onChange={(e) => patch({ customer_email: e.target.value || null })} />
+              <input className={inputCls} {...warn("customer_name")} placeholder="Nome cliente" value={draft.customer_name} onChange={(e) => patch({ customer_name: e.target.value })} />
+              <input className={inputCls} {...warn("customer_vat")} placeholder="P.IVA / CF" value={draft.customer_vat ?? ""} onChange={(e) => patch({ customer_vat: e.target.value || null })} />
+              <input className={cn(inputCls, "sm:col-span-2")} {...warn("customer_address")} placeholder="Indirizzo" value={draft.customer_address ?? ""} onChange={(e) => patch({ customer_address: e.target.value || null })} />
+              <input className={inputCls} {...warn("customer_email")} placeholder="Email" value={draft.customer_email ?? ""} onChange={(e) => patch({ customer_email: e.target.value || null })} />
             </div>
           </section>
 
@@ -195,9 +245,9 @@ export function EditDocument() {
           <section>
             <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Documento</h2>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <input className={inputCls} placeholder="Numero (es. 2026-001)" value={draft.document_number ?? ""} onChange={(e) => patch({ document_number: e.target.value || null })} />
-              <input className={inputCls} type="date" value={draft.document_date ?? ""} onChange={(e) => patch({ document_date: e.target.value || null })} />
-              <input className={inputCls} placeholder="Valuta" value={draft.currency} onChange={(e) => patch({ currency: e.target.value.toUpperCase() })} />
+              <input className={inputCls} {...warn("document_number")} placeholder="Numero (es. 2026-001)" value={draft.document_number ?? ""} onChange={(e) => patch({ document_number: e.target.value || null })} />
+              <input className={inputCls} {...warn("document_date")} type="date" value={draft.document_date ?? ""} onChange={(e) => patch({ document_date: e.target.value || null })} />
+              <input className={inputCls} {...warn("currency")} placeholder="Valuta" value={draft.currency} onChange={(e) => patch({ currency: e.target.value.toUpperCase() })} />
             </div>
           </section>
 
@@ -222,11 +272,12 @@ export function EditDocument() {
                     li.unit_price === null ? "border-[color:var(--rosa)]" : "border-border",
                   )}
                 >
-                  <input className={inputCls} placeholder="Descrizione" value={li.description} onChange={(e) => patchItem(i, { description: e.target.value })} />
+                  <input className={inputCls} {...warn(`line_items[${i}].description`)} placeholder="Descrizione" value={li.description} onChange={(e) => patchItem(i, { description: e.target.value })} />
                   <input
                     className={cn(inputCls, "text-right")}
                     inputMode="decimal"
                     title="Quantità"
+                    {...warn(`line_items[${i}].quantity`)}
                     value={String(li.quantity)}
                     onChange={(e) => patchItem(i, { quantity: parseNum(e.target.value) ?? 0 })}
                   />
@@ -235,6 +286,7 @@ export function EditDocument() {
                     inputMode="decimal"
                     placeholder="prezzo mancante"
                     title="Prezzo unitario"
+                    {...warn(`line_items[${i}].unit_price`)}
                     value={li.unit_price === null ? "" : String(li.unit_price)}
                     onChange={(e) => patchItem(i, { unit_price: parseNum(e.target.value) })}
                   />
@@ -260,11 +312,15 @@ export function EditDocument() {
                 className={cn(inputCls, "w-28 text-right")}
                 inputMode="decimal"
                 placeholder="0"
+                {...warn("tax")}
                 value={draft.tax === null ? "" : String(draft.tax)}
                 onChange={(e) => patch({ tax: parseNum(e.target.value) })}
               />
             </div>
-            <div className="flex justify-between border-t border-border pt-2 text-base font-semibold"><span>Totale</span><span>{fmt(draft.total)}</span></div>
+            <div className="flex justify-between border-t border-border pt-2 text-base font-semibold">
+              <span>Totale</span>
+              <span title={doubt("total") ?? doubt("subtotal")} style={doubt("total") || doubt("subtotal") ? { color: WARN } : undefined}>{fmt(draft.total)}</span>
+            </div>
           </section>
 
           {/* Note */}
@@ -274,6 +330,7 @@ export function EditDocument() {
               className={cn(inputCls, "mt-3")}
               rows={3}
               placeholder="Condizioni, validità, articoli da confermare…"
+              {...warn("notes")}
               value={draft.notes ?? ""}
               onChange={(e) => patch({ notes: e.target.value || null })}
             />

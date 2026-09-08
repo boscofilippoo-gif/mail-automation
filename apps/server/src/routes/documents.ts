@@ -4,6 +4,7 @@ import { Router } from "express";
 
 import { requireAuth } from "../auth/session.js";
 import {
+  clearDocumentReview,
   countBreweryTemplates,
   deleteDocument,
   getAllBreweryTemplates,
@@ -42,8 +43,20 @@ import {
   type ExtractedDocument,
   type LineItem,
   type ProcessedStatus,
+  type ReviewFlag,
   type SentStatus,
 } from "../types.js";
+
+/** ReviewFlag[] dal JSON salvato (tollerante a null/corrotto). */
+function parseReview(json: string | null): ReviewFlag[] {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? (v as ReviewFlag[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 /* ───────────────── Parsing query string per liste paginate ───────────────── */
 
@@ -146,6 +159,7 @@ documentsRouter.get("/", (req, res) => {
     from: qDate(req.query.from),
     to: qDate(req.query.to),
     sort: qEnum<DocumentSort>(req.query.sort, DOC_SORTS),
+    review: req.query.review === "pending" ? "pending" : undefined,
     limit,
     offset,
   });
@@ -166,6 +180,7 @@ documentsRouter.get("/", (req, res) => {
       draftId: d.draft_id,
       breweryCount: d.type === "ordine" ? breweryCount : 0,
       edited: d.original_json !== null,
+      review: parseReview(d.review_json),
       data: JSON.parse(d.extracted_json),
     })),
   });
@@ -219,6 +234,8 @@ documentsRouter.get("/:id", (req, res) => {
     data: JSON.parse(doc.extracted_json),
     // estrazione AI originale (null se il documento non è mai stato modificato a mano)
     originalData: doc.original_json ? JSON.parse(doc.original_json) : null,
+    // campi che l'AI ha dichiarato incerti (vuoto dopo un salvataggio manuale)
+    review: parseReview(doc.review_json),
   });
 });
 
@@ -408,6 +425,7 @@ documentsRouter.put("/:id", async (req, res) => {
     fs.unlink(stored.pdf_path, () => {});
 
     updateDocument(req.userId!, stored.id, JSON.stringify(doc), newPdfPath);
+    clearDocumentReview(req.userId!, stored.id); // rivisto da una persona: niente più da controllare
     res.json({ id: stored.id, type: stored.type, createdAt: stored.created_at, data: doc });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Errore nel salvataggio";
