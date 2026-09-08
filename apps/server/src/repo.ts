@@ -239,19 +239,39 @@ export function updateDocumentStatus(
   }
 }
 
-/** Aggiorna un documento dopo una modifica manuale (nuovo JSON + nuovo PDF). */
+/**
+ * Aggiorna un documento dopo una modifica manuale (nuovo JSON + nuovo PDF).
+ * La prima volta congela l'estrazione AI in original_json, così l'utente può
+ * sempre tornare al punto di partenza ("Ripristina originale").
+ */
 export function updateDocument(
   userId: number,
   id: number,
   extractedJson: string,
   pdfPath: string,
 ): void {
-  db.prepare(`UPDATE documents SET extracted_json = ?, pdf_path = ? WHERE id = ? AND user_id = ?`).run(
-    extractedJson,
-    pdfPath,
-    id,
-    userId,
-  );
+  db.prepare(
+    `UPDATE documents
+        SET original_json = COALESCE(original_json, extracted_json),
+            extracted_json = ?, pdf_path = ?
+      WHERE id = ? AND user_id = ?`,
+  ).run(extractedJson, pdfPath, id, userId);
+}
+
+/** Aggiorna solo il path del PDF (rigenerato dallo stesso JSON): NON è una modifica manuale. */
+export function setDocumentPdfPath(userId: number, id: number, pdfPath: string): void {
+  db.prepare(`UPDATE documents SET pdf_path = ? WHERE id = ? AND user_id = ?`).run(pdfPath, id, userId);
+}
+
+/** Elimina un documento; ritorna i path dei file da rimuovere dal disco (o null se non esiste). */
+export function deleteDocument(userId: number, id: number): { pdf_path: string; xlsx_path: string | null } | null {
+  const row = db
+    .prepare(`SELECT pdf_path, xlsx_path FROM documents WHERE id = ? AND user_id = ?`)
+    .get(id, userId) as { pdf_path: string; xlsx_path: string | null } | undefined;
+  if (!row) return null;
+  // processed.document_id → ON DELETE SET NULL: il log resta, il dedup pure
+  db.prepare(`DELETE FROM documents WHERE id = ? AND user_id = ?`).run(id, userId);
+  return row;
 }
 
 /** Registra (o aggiorna) il path del file Excel generato per un documento. */

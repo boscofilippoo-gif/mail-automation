@@ -118,7 +118,7 @@ export async function processSingleMail(args: {
 
     // Se l'utente ha un modulo Excel di birrificio, genera anche l'.xlsx.
     // Non-bloccante: un errore qui non deve far fallire il documento/PDF.
-    const brewery = getBreweryTemplate(userId);
+    const brewery = docType === "ordine" ? getBreweryTemplate(userId) : null;
     if (brewery) {
       try {
         const assignments = await mapOrderToRows(extracted.line_items, brewery.mapping);

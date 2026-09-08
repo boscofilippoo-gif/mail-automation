@@ -16,11 +16,13 @@ import {
   RotateCcw,
   Send,
   Square,
+  Trash2,
+  Undo2,
 } from "lucide-react";
 
 import { useOutletContext } from "react-router-dom";
 
-import { api, gmailUrl, type DocumentItem, type Me, type ProcessedItem, type ScanResult, type ScanRun, type SentStatus } from "@/api";
+import { api, connectGmail, gmailUrl, type DocumentItem, type Me, type ProcessedItem, type ScanResult, type ScanRun, type SentStatus } from "@/api";
 import { cn } from "@/lib/utils";
 
 const RUN_KIND_LABEL: Record<ScanRun["kind"], string> = {
@@ -311,7 +313,7 @@ export function Dashboard() {
             Riautorizza l'accesso (un click, torni qui subito).
           </p>
           <button
-            onClick={() => (window.location.href = "/auth/google")}
+            onClick={connectGmail}
             className="rounded-full px-5 py-2 text-sm font-medium"
             style={{ background: "var(--azzurro)", color: "var(--nero)" }}
           >
@@ -747,6 +749,27 @@ function DocCard({
     onChanged();
   }
 
+  /** Annulla "inviato": torna a "bozza" se esiste una bozza Gmail, altrimenti a "da inviare". */
+  async function unmarkSent() {
+    await api.setStatus(doc.id, doc.draftId ? "bozza" : "da_inviare").catch(() => {});
+    onChanged();
+  }
+
+  const [deleting, setDeleting] = useState(false);
+  async function remove() {
+    const who = d.customer_name || "questo documento";
+    if (!confirm(`Eliminare ${doc.type} di ${who}? Il PDF verrà rimosso. L'operazione non si può annullare.`)) return;
+    setDeleting(true);
+    setCardError(null);
+    try {
+      await api.deleteDocument(doc.id);
+      onChanged();
+    } catch (e) {
+      setCardError(e instanceof Error ? e.message : "Errore nell'eliminazione");
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
       <div className="flex items-center justify-between">
@@ -800,13 +823,22 @@ function DocCard({
         </button>
       )}
       {replyOpen && <ReplyModal docId={doc.id} onClose={() => setReplyOpen(false)} />}
-      {doc.sentStatus !== "inviato" && (
+      {doc.sentStatus !== "inviato" ? (
         <button
           onClick={markSent}
           className="mt-2 inline-flex w-full items-center justify-center gap-1.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           <Check className="size-3.5" />
           Segna come inviato
+        </button>
+      ) : (
+        <button
+          onClick={unmarkSent}
+          title="Riporta il documento allo stato precedente"
+          className="mt-2 inline-flex w-full items-center justify-center gap-1.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Undo2 className="size-3.5" />
+          Segna come non inviato
         </button>
       )}
       <div className="mt-5 flex gap-2">
@@ -833,6 +865,15 @@ function DocCard({
           <Download className="size-4" />
           Scarica
         </a>
+        <button
+          onClick={remove}
+          disabled={deleting}
+          title="Elimina documento"
+          aria-label="Elimina documento"
+          className="inline-flex items-center justify-center rounded-lg border border-border px-3 py-2 text-sm transition-colors hover:border-[var(--rosa)] hover:text-[var(--rosa)] disabled:opacity-60"
+        >
+          {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+        </button>
       </div>
       {doc.breweryCount === 1 && (
         <a

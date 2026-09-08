@@ -5,6 +5,7 @@ import { Router } from "express";
 import { requireAuth } from "../auth/session.js";
 import {
   countBreweryTemplates,
+  deleteDocument,
   getAllBreweryTemplates,
   getBreweryTemplate,
   getBreweryTemplateByKey,
@@ -15,6 +16,7 @@ import {
   hasScope,
   listDocuments,
   listProcessed,
+  setDocumentPdfPath,
   setDocumentXlsxPath,
   setSortAssignments,
   updateDocument,
@@ -109,7 +111,8 @@ function validateDocument(body: unknown): ExtractedDocument {
 
 /** Lista documenti generati, con i dati estratti già parsati. */
 documentsRouter.get("/", (req, res) => {
-  // il numero di moduli decide il flusso Excel: 0 nessuno, 1 download diretto, ≥2 smistamento
+  // il numero di moduli decide il flusso Excel: 0 nessuno, 1 download diretto, ≥2 smistamento.
+  // I moduli fornitore riguardano solo gli ORDINI: su fatture/preventivi non si mostra nulla.
   const breweryCount = countBreweryTemplates(req.userId!);
   const docs = listDocuments(req.userId!).map((d) => ({
     id: d.id,
@@ -118,7 +121,8 @@ documentsRouter.get("/", (req, res) => {
     sourceMessageId: d.source_message_id,
     sentStatus: d.sent_status,
     draftId: d.draft_id,
-    breweryCount,
+    breweryCount: d.type === "ordine" ? breweryCount : 0,
+    edited: d.original_json !== null,
     data: JSON.parse(d.extracted_json),
   }));
   res.json(docs);
@@ -160,7 +164,22 @@ documentsRouter.get("/:id", (req, res) => {
     draftId: doc.draft_id,
     sourceMessageId: doc.source_message_id,
     data: JSON.parse(doc.extracted_json),
+    // estrazione AI originale (null se il documento non è mai stato modificato a mano)
+    originalData: doc.original_json ? JSON.parse(doc.original_json) : null,
   });
+});
+
+/** Elimina un documento e i suoi file. La riga nel log mail resta (dedup intatto). */
+documentsRouter.delete("/:id", (req, res) => {
+  const removed = deleteDocument(req.userId!, Number(req.params.id));
+  if (!removed) {
+    res.status(404).json({ error: "Documento non trovato" });
+    return;
+  }
+  // file già assenti (disco effimero) → ENOENT ignorato
+  fs.unlink(removed.pdf_path, () => {});
+  if (removed.xlsx_path) fs.unlink(removed.xlsx_path, () => {});
+  res.json({ ok: true });
 });
 
 /**
@@ -187,7 +206,7 @@ documentsRouter.post("/:id/draft", async (req, res) => {
     let pdfPath = doc.pdf_path;
     if (!fs.existsSync(pdfPath)) {
       pdfPath = await generatePdf(data, settings, getCustomTemplateHtml(req.userId!));
-      updateDocument(req.userId!, doc.id, doc.extracted_json, pdfPath);
+      setDocumentPdfPath(req.userId!, doc.id, pdfPath); // stesso JSON: non congelare l'originale
     }
 
     const client = getAuthedClientForUser(req.userId!);
@@ -368,6 +387,10 @@ documentsRouter.get("/:id/xlsx", async (req, res) => {
     res.status(404).json({ error: "Documento non trovato" });
     return;
   }
+  if (doc.type !== "ordine") {
+    res.status(400).json({ error: "I moduli fornitore si applicano solo agli ordini." });
+    return;
+  }
   try {
     // il modulo è la condizione: senza, non serviamo neppure un vecchio file orfano
     const template = getBreweryTemplate(req.userId!);
@@ -403,6 +426,10 @@ documentsRouter.get("/:id/sort", async (req, res) => {
   const doc = getDocument(req.userId!, Number(req.params.id));
   if (!doc) {
     res.status(404).json({ error: "Documento non trovato" });
+    return;
+  }
+  if (doc.type !== "ordine") {
+    res.status(400).json({ error: "I moduli fornitore si applicano solo agli ordini." });
     return;
   }
   try {
@@ -513,6 +540,10 @@ documentsRouter.get("/:id/xlsx/:breweryKey", async (req, res) => {
   const doc = getDocument(req.userId!, Number(req.params.id));
   if (!doc) {
     res.status(404).json({ error: "Documento non trovato" });
+    return;
+  }
+  if (doc.type !== "ordine") {
+    res.status(400).json({ error: "I moduli fornitore si applicano solo agli ordini." });
     return;
   }
   const breweryKey = req.params.breweryKey!;

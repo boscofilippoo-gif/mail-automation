@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, Loader2, Plus, Send, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Loader2, Plus, RotateCcw, Send, Trash2 } from "lucide-react";
 
 import { api, type ExtractedDocument, type LineItem, type Me } from "@/api";
 import { cn } from "@/lib/utils";
@@ -36,6 +36,8 @@ export function EditDocument() {
   const [draft, setDraft] = useState<ExtractedDocument | null>(null);
   const [docType, setDocType] = useState<string>("");
   const [sourceMessageId, setSourceMessageId] = useState<string | null>(null);
+  // estrazione AI originale: presente solo se il documento è già stato modificato a mano
+  const [original, setOriginal] = useState<ExtractedDocument | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,9 +48,17 @@ export function EditDocument() {
         setDraft(recalc(d.data));
         setDocType(d.type);
         setSourceMessageId(d.sourceMessageId ?? null);
+        setOriginal(d.originalData ?? null);
       })
       .catch((e) => setError(e.message));
   }, [id]);
+
+  /** Riporta il form all'estrazione AI originale (va comunque salvato per rigenerare il PDF). */
+  function restoreOriginal() {
+    if (!original) return;
+    if (!confirm("Ripristinare i dati estratti dall'AI? Le modifiche manuali verranno sostituite nel form (poi premi Salva).")) return;
+    setDraft(recalc(original));
+  }
 
   function patch(p: Partial<ExtractedDocument>) {
     setDraft((d) => (d ? recalc({ ...d, ...p }) : d));
@@ -126,6 +136,17 @@ export function EditDocument() {
           </h1>
         </div>
         <div className="flex flex-wrap gap-2">
+          {original && (
+            <button
+              onClick={restoreOriginal}
+              disabled={saving || drafting}
+              title="Torna ai dati estratti dall'AI prima delle modifiche manuali"
+              className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-sm text-muted-foreground transition-colors hover:border-accent hover:text-foreground disabled:opacity-60"
+            >
+              <RotateCcw className="size-4" />
+              Ripristina originale
+            </button>
+          )}
           {!inoltro && (
             <button
               onClick={saveAndDraft}

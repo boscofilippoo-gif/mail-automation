@@ -98,7 +98,8 @@ export interface DocumentItem {
   sourceMessageId: string;
   sentStatus: SentStatus;
   draftId: string | null;
-  breweryCount?: number; // n° moduli birrificio: 0 nessuno, 1 download diretto, ≥2 smistamento
+  breweryCount?: number; // n° moduli birrificio: 0 nessuno, 1 download diretto, ≥2 smistamento (solo ordini)
+  edited?: boolean; // true se modificato a mano almeno una volta (esiste l'originale AI)
   data: ExtractedDocument;
 }
 
@@ -290,9 +291,15 @@ export const api = {
   deleteListino: () => request<{ ok: true }>("/api/listino", { method: "DELETE" }),
 
   getDocument: (id: number) =>
-    request<{ id: number; type: DocType; createdAt: string; sourceMessageId: string; data: ExtractedDocument }>(
-      `/api/documents/${id}`,
-    ),
+    request<{
+      id: number;
+      type: DocType;
+      createdAt: string;
+      sourceMessageId: string;
+      data: ExtractedDocument;
+      originalData: ExtractedDocument | null; // estrazione AI originale, null se mai modificato
+    }>(`/api/documents/${id}`),
+  deleteDocument: (id: number) => request<{ ok: true }>(`/api/documents/${id}`, { method: "DELETE" }),
   updateDocument: (id: number, data: ExtractedDocument) =>
     request<{ id: number; type: DocType; createdAt: string; data: ExtractedDocument }>(
       `/api/documents/${id}`,

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FileSpreadsheet, FileText, Link2, Loader2, Plug, RefreshCw, Trash2 } from "lucide-react";
 
-import { api, type ListinoResult, type ListinoState } from "@/api";
+import { api, connectGmail, type ListinoResult, type ListinoState } from "@/api";
 
 const SOURCE_LABEL: Record<string, string> = {
   sheet: "Google Sheet",
@@ -113,7 +113,7 @@ export function Listino() {
             l'accesso (un click, torni qui subito).
           </p>
           <button
-            onClick={() => (window.location.href = "/auth/google")}
+            onClick={connectGmail}
             className="rounded-full px-5 py-2 text-sm font-medium"
             style={{ background: "var(--azzurro)", color: "var(--nero)" }}
           >

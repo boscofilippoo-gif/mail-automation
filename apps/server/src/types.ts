@@ -74,6 +74,7 @@ export interface DocumentRecord {
   draft_id: string | null;
   xlsx_path: string | null; // Excel del birrificio, se l'utente usa un modulo
   sort_assignments_json: string | null; // smistamento {itemIndex→brewery_key} confermato
+  original_json: string | null; // estrazione AI originale, salvata alla prima modifica manuale
 }
 
 /** Assegnazione di una riga d'ordine a una riga di un modulo birrificio (smistamento). */

@@ -214,6 +214,8 @@ export function migrate(): void {
   ensureColumn("documents", "xlsx_path", "xlsx_path TEXT");
   // smistamento multi-fornitore: mappa {itemIndex → brewery_key} confermata dall'utente
   ensureColumn("documents", "sort_assignments_json", "sort_assignments_json TEXT");
+  // estrazione AI originale, congelata al primo salvataggio manuale (null = mai modificato)
+  ensureColumn("documents", "original_json", "original_json TEXT");
 
   // ── login universale / doppia modalità casella ──
   rebuildUsersIfNeeded(); // google_sub nullable su DB pre-esistenti
