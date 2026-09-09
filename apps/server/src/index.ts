@@ -17,12 +17,17 @@ import { scanRouter } from "./routes/scan.js";
 import { settingsRouter } from "./routes/settings.js";
 import { listinoRouter } from "./routes/listino.js";
 import { inboundRouter } from "./routes/inbound.js";
+import { customersRouter } from "./routes/customers.js";
+import { backfillCustomers } from "./repo.js";
 import { scanAllUsers } from "./jobs/dailyScan.js";
 import { closePdfBrowser } from "./pdf/generate.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 migrate();
+// anagrafica implicita: aggancia i documenti nati prima della feature (idempotente, veloce)
+const linked = backfillCustomers();
+if (linked) console.log(`[customers] agganciati ${linked} documenti a schede cliente`);
 
 const app = express();
 app.use(cookieParser());
@@ -49,6 +54,7 @@ app.use("/api/me", meRouter);
 app.use("/api/keywords", keywordsRouter);
 app.use("/api/documents", documentsRouter);
 app.use("/api/scan", scanRouter);
+app.use("/api/customers", customersRouter);
 
 // ── In produzione il server serve anche il frontend buildato (single service) ──
 // Il build del frontend finisce in apps/web/dist; da dist/index.js del server

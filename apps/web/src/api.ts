@@ -108,6 +108,7 @@ export interface DocumentItem {
   breweryCount?: number; // n° moduli birrificio: 0 nessuno, 1 download diretto, ≥2 smistamento (solo ordini)
   edited?: boolean; // true se modificato a mano almeno una volta (esiste l'originale AI)
   review?: ReviewFlag[]; // campi incerti ancora da controllare (vuoto dopo un salvataggio)
+  customerId?: number | null; // scheda cliente agganciata
   data: ExtractedDocument;
 }
 
@@ -178,8 +179,47 @@ export interface DocumentFilters {
   to?: string; // YYYY-MM-DD
   sort?: DocumentSort;
   review?: "pending"; // solo documenti con campi da controllare
+  customer?: number; // solo documenti di una scheda cliente
   limit?: number;
   offset?: number;
+}
+
+/* ── Anagrafica clienti ── */
+export type CustomerSort = "name" | "recent" | "total";
+
+export interface Customer {
+  id: number;
+  name: string;
+  vat: string | null;
+  email: string | null;
+  address: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  doc_count: number;
+  last_doc_at: string | null;
+  n_preventivo: number; sum_preventivo: number;
+  n_ordine: number; sum_ordine: number;
+  n_fattura: number; sum_fattura: number;
+}
+
+export interface CustomerDocument {
+  id: number;
+  type: DocType;
+  createdAt: string;
+  sentStatus: SentStatus;
+  subject: string | null;
+  documentNumber: string | null;
+  total: number | null;
+  currency: string;
+  review: number; // campi da controllare
+}
+
+export interface CustomerDetail {
+  customer: Customer;
+  monthly: { month: string; type: DocType; n: number; sum: number }[];
+  documents: CustomerDocument[];
+  documentsTotal: number;
 }
 
 /** Serializza un oggetto in query string, saltando vuoti/undefined. */
@@ -264,6 +304,15 @@ export const api = {
     request<{ ok: true }>(`/api/keywords/${id}`, { method: "DELETE" }),
 
   getActivity: () => request<{ lastCheckAt: string | null }>("/api/me/activity"),
+
+  listCustomers: (f: { q?: string; sort?: CustomerSort; limit?: number; offset?: number } = {}) =>
+    request<Page<Customer>>(`/api/customers${toQuery(f)}`),
+  getCustomer: (id: number) => request<CustomerDetail>(`/api/customers/${id}`),
+  updateCustomer: (id: number, patch: Partial<Pick<Customer, "name" | "vat" | "email" | "address" | "notes">>) =>
+    request<Customer>(`/api/customers/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  mergeCustomer: (id: number, intoId: number) =>
+    request<Customer>(`/api/customers/${id}/merge`, { method: "POST", body: JSON.stringify({ intoId }) }),
+  deleteCustomer: (id: number) => request<{ ok: true }>(`/api/customers/${id}`, { method: "DELETE" }),
   listDocuments: (f: DocumentFilters = {}) =>
     request<Page<DocumentItem>>(`/api/documents${toQuery(f)}`),
   listProcessed: (f: { status?: ProcessedItem["status"]; limit?: number; offset?: number } = {}) =>

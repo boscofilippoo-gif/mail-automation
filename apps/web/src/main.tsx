@@ -15,6 +15,8 @@ import { Listino } from "@/pages/Listino";
 import { EditDocument } from "@/pages/EditDocument";
 import { SortDocument } from "@/pages/SortDocument";
 import { Onboarding } from "@/pages/Onboarding";
+import { Customers } from "@/pages/Customers";
+import { CustomerDetail } from "@/pages/CustomerDetail";
 import { PrivacyApp } from "@/pages/legal/Privacy";
 import { TerminiApp } from "@/pages/legal/Termini";
 
@@ -32,6 +34,8 @@ createRoot(document.getElementById("root")!).render(
           <Route path="keywords" element={<Keywords />} />
           <Route path="settings" element={<Settings />} />
           <Route path="listino" element={<Listino />} />
+          <Route path="customers" element={<Customers />} />
+          <Route path="customers/:id" element={<CustomerDetail />} />
           <Route path="documents/:id/edit" element={<EditDocument />} />
           <Route path="documents/:id/sort" element={<SortDocument />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -15,6 +15,7 @@ import {
 } from "../gmail/scan.js";
 import {
   createScanRun,
+  findCustomerByEmail,
   getBreweryTemplate,
   getCustomTemplateHtml,
   getInboundMail,
@@ -27,6 +28,8 @@ import {
   listActiveKeywords,
   listActiveUserIds,
   recordProcessed,
+  resolveCustomer,
+  setDocumentCustomer,
   setDocumentXlsxPath,
   touchSync,
   updateDocumentStatus,
@@ -95,10 +98,14 @@ export async function processSingleMail(args: {
   const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
   try {
+    // mittente già in anagrafica? passa i dati all'AI e non farli segnalare come incerti
+    const known = findCustomerByEmail(userId, mail.from);
+    const hint = known ? { name: known.name, vat: known.vat, email: known.email, address: known.address } : null;
     let extracted;
     let review;
     try {
-      ({ data: extracted, review } = await extractDocument(mail.bodyText || mail.subject, docType, listino));
+      ({ data: extracted, review } = await extractDocument(mail.bodyText || mail.subject, docType, listino, hint));
+      if (hint) review = review.filter((r) => !r.field.startsWith("customer_"));
     } catch (e) {
       throw new Error(`Estrazione dati fallita: ${msg(e)}`);
     }
@@ -118,6 +125,20 @@ export async function processSingleMail(args: {
       sourceMessageId: mail.id,
       reviewJson: review.length ? JSON.stringify(review) : null,
     });
+
+    // anagrafica implicita: aggancia (o crea) la scheda cliente. Non bloccante.
+    try {
+      const customer = resolveCustomer(userId, {
+        name: extracted.customer_name,
+        vat: extracted.customer_vat,
+        email: extracted.customer_email,
+        address: extracted.customer_address,
+        senderEmail: mail.from,
+      });
+      if (customer) setDocumentCustomer(userId, docRecord.id, customer.id);
+    } catch (e) {
+      console.error(`[customers] aggancio cliente fallito (doc ${docRecord.id}):`, msg(e));
+    }
 
     // Se l'utente ha un modulo Excel di birrificio, genera anche l'.xlsx.
     // Non-bloccante: un errore qui non deve far fallire il documento/PDF.

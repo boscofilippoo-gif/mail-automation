@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { FileText, LogOut, Settings2, SlidersHorizontal, Table2 } from "lucide-react";
+import { FileText, LogOut, Settings2, SlidersHorizontal, Table2, Users } from "lucide-react";
 import { Logo } from "@/components/Logo";
 
 import { api, type Me } from "@/api";
@@ -64,6 +64,7 @@ export function App() {
               {/* le schede stanno qui da sm in su; su mobile passano nella barra in basso */}
               <div className="hidden items-center gap-1 sm:flex">
                 <TabLink to="/dashboard">Documenti</TabLink>
+                <TabLink to="/customers">Clienti</TabLink>
                 <TabLink to="/keywords">Regole</TabLink>
                 <TabLink to="/listino">Listino</TabLink>
                 <TabLink to="/settings">Impostazioni</TabLink>
@@ -94,6 +95,7 @@ export function App() {
 function MobileTabBar() {
   const items = [
     { to: "/dashboard", label: "Documenti", Icon: FileText },
+    { to: "/customers", label: "Clienti", Icon: Users },
     { to: "/keywords", label: "Regole", Icon: SlidersHorizontal },
     { to: "/listino", label: "Listino", Icon: Table2 },
     { to: "/settings", label: "Impostazioni", Icon: Settings2 },
@@ -101,7 +103,7 @@ function MobileTabBar() {
   return (
     <nav
       aria-label="Navigazione principale"
-      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-border bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden"
+      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden"
     >
       {items.map(({ to, label, Icon }) => (
         <NavLink

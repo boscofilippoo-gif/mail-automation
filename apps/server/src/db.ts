@@ -223,6 +223,27 @@ export function migrate(): void {
   ensureColumn("user_settings", "notify_email", "notify_email TEXT");
   ensureColumn("user_settings", "notify_errors", "notify_errors INTEGER NOT NULL DEFAULT 1");
 
+  // ── anagrafica clienti (implicita: nasce dai documenti) ──
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name       TEXT NOT NULL,
+      name_key   TEXT NOT NULL,
+      vat        TEXT,
+      email      TEXT,
+      address    TEXT,
+      notes      TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_customers_user_name ON customers(user_id, name_key);
+    CREATE INDEX IF NOT EXISTS idx_customers_user_vat ON customers(user_id, vat);
+    CREATE INDEX IF NOT EXISTS idx_customers_user_email ON customers(user_id, email);
+  `);
+  ensureColumn("documents", "customer_id", "customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL");
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_customer ON documents(customer_id);`);
+
   // ── indici per liste paginate/filtrate (idempotenti) ──
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_documents_user_created ON documents(user_id, created_at DESC);

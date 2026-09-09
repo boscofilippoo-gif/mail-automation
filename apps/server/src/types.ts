@@ -76,6 +76,29 @@ export interface DocumentRecord {
   sort_assignments_json: string | null; // smistamento {itemIndex→brewery_key} confermato
   original_json: string | null; // estrazione AI originale, salvata alla prima modifica manuale
   review_json: string | null; // ReviewFlag[] dei campi incerti; null/[] = niente da controllare
+  customer_id: number | null; // scheda cliente agganciata (anagrafica implicita)
+}
+
+/** Scheda cliente, creata automaticamente dai documenti e correggibile a mano. */
+export interface Customer {
+  id: number;
+  user_id: number;
+  name: string;
+  name_key: string; // nome normalizzato per il match (minuscolo, senza forma giuridica)
+  vat: string | null;
+  email: string | null;
+  address: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Dati anagrafici già noti, passati all'estrazione per non farli indovinare all'AI. */
+export interface CustomerHint {
+  name: string;
+  vat: string | null;
+  email: string | null;
+  address: string | null;
 }
 
 /** Assegnazione di una riga d'ordine a una riga di un modulo birrificio (smistamento). */

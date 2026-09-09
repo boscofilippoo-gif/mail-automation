@@ -1220,7 +1220,15 @@ function DocCard({
           )}
         </span>
       </div>
-      <h3 className="mt-4 truncate text-lg font-semibold">{customerLabel(d.customer_name)}</h3>
+      <h3 className="mt-4 truncate text-lg font-semibold">
+        {doc.customerId ? (
+          <Link to={`/customers/${doc.customerId}`} className="transition-colors hover:text-accent" title="Apri la scheda cliente">
+            {customerLabel(d.customer_name)}
+          </Link>
+        ) : (
+          customerLabel(d.customer_name)
+        )}
+      </h3>
       <p className="mt-1 text-sm text-muted-foreground">
         {plural(d.line_items.length, "riga", "righe")} · Totale {fmt(d.total)}
       </p>

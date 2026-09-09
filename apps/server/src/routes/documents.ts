@@ -160,6 +160,7 @@ documentsRouter.get("/", (req, res) => {
     to: qDate(req.query.to),
     sort: qEnum<DocumentSort>(req.query.sort, DOC_SORTS),
     review: req.query.review === "pending" ? "pending" : undefined,
+    customerId: req.query.customer !== undefined ? qInt(req.query.customer, -1, 1_000_000_000) : undefined,
     limit,
     offset,
   });
@@ -181,6 +182,7 @@ documentsRouter.get("/", (req, res) => {
       breweryCount: d.type === "ordine" ? breweryCount : 0,
       edited: d.original_json !== null,
       review: parseReview(d.review_json),
+      customerId: d.customer_id,
       data: JSON.parse(d.extracted_json),
     })),
   });
@@ -236,6 +238,7 @@ documentsRouter.get("/:id", (req, res) => {
     originalData: doc.original_json ? JSON.parse(doc.original_json) : null,
     // campi che l'AI ha dichiarato incerti (vuoto dopo un salvataggio manuale)
     review: parseReview(doc.review_json),
+    customerId: doc.customer_id,
   });
 });
 

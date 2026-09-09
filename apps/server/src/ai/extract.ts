@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 import { env } from "../env.js";
-import type { DocType, ExtractedDocument, PriceListItem, ReviewFlag } from "../types.js";
+import type { CustomerHint, DocType, ExtractedDocument, PriceListItem, ReviewFlag } from "../types.js";
 
 const client = new Anthropic({ apiKey: env.anthropic.apiKey });
 
@@ -174,9 +174,16 @@ export async function extractDocument(
   bodyText: string,
   expectedType: DocType,
   listino?: PriceListItem[],
+  knownCustomer?: CustomerHint | null,
 ): Promise<ExtractionResult> {
   const hasListino = Boolean(listino && listino.length > 0);
   const listinoText = hasListino ? listinoBlock(prefilterListino(listino!, bodyText)) : "";
+  // anagrafica già nota (stesso mittente di documenti precedenti): l'AI la riusa invece di indovinare
+  const customerText = knownCustomer
+    ? `\n\nANAGRAFICA NOTA (il mittente corrisponde a un cliente già in archivio):\n` +
+      `nome: ${knownCustomer.name}\nP.IVA/CF: ${knownCustomer.vat ?? "-"}\nemail: ${knownCustomer.email ?? "-"}\nindirizzo: ${knownCustomer.address ?? "-"}\n` +
+      `Usa questi valori per customer_name, customer_vat, customer_email e customer_address salvo che la mail dica ESPLICITAMENTE il contrario (es. fatturare a un'altra società). Non elencarli tra i campi incerti.`
+    : "";
 
   const response = await client.messages.create({
     model: env.anthropic.model,
@@ -193,7 +200,7 @@ export async function extractDocument(
     messages: [
       {
         role: "user",
-        content: `Tipo di documento atteso: ${expectedType}.\n\nTesto dell'email:\n"""\n${bodyText}\n"""${listinoText}`,
+        content: `Tipo di documento atteso: ${expectedType}.\n\nTesto dell'email:\n"""\n${bodyText}\n"""${listinoText}${customerText}`,
       },
     ],
   });

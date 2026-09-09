@@ -7,6 +7,7 @@ import {
   type ApiConnectorConfig,
   type BreweryRow,
   type BreweryTemplate,
+  type Customer,
   type DocType,
   type DocumentRecord,
   type Keyword,
@@ -225,6 +226,7 @@ export interface DocumentQuery {
   to?: string; // ISO date (inclusa)
   sort?: DocumentSort;
   review?: "pending"; // solo documenti con campi incerti ancora da controllare
+  customerId?: number; // solo documenti di una scheda cliente
   limit: number;
   offset: number;
 }
@@ -259,6 +261,10 @@ export function queryDocuments(userId: number, qy: DocumentQuery): { items: Docu
   }
   if (qy.review === "pending") {
     where.push("d.review_json IS NOT NULL AND d.review_json <> '[]'");
+  }
+  if (qy.customerId !== undefined) {
+    where.push("d.customer_id = @customerId");
+    params.customerId = qy.customerId;
   }
   if (qy.q) {
     // escape dei jolly LIKE: l'utente cerca testo, non pattern
@@ -407,6 +413,233 @@ export function getSortAssignments(userId: number, id: number): Record<number, s
   } catch {
     return null;
   }
+}
+
+/* ───────────────────────── Anagrafica clienti ───────────────────────── */
+
+/** P.IVA/CF normalizzati: solo lettere e cifre, maiuscolo, senza prefisso paese "IT". */
+export function normVat(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const s = v.replace(/[^0-9a-z]/gi, "").toUpperCase();
+  const noIt = s.startsWith("IT") && s.length > 11 ? s.slice(2) : s;
+  return noIt.length >= 5 ? noIt : null;
+}
+export function normEmail(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const m = v.match(/[^\s<>"']+@[^\s<>"']+\.[^\s<>"']+/);
+  return m ? m[0].toLowerCase() : null;
+}
+/** Chiave nome: minuscolo, senza accenti/punteggiatura/forma giuridica, spazi compressi. */
+export function nameKey(v: string | null | undefined): string {
+  if (!v) return "";
+  return v
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\b(s ?r ?l|s ?p ?a|s ?n ?c|s ?a ?s|s ?s|srls|societa|ditta|di|e|and|the)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+/** Nomi che il modello scrive quando non sa: non diventano schede. */
+const UNKNOWN_NAME = /^<?\s*(unknown|n\/?a|non\s+(rilevato|disponibile)|sconosciuto|cliente)\s*>?$/i;
+
+export function getCustomer(userId: number, id: number): Customer | undefined {
+  return db.prepare(`SELECT * FROM customers WHERE id = ? AND user_id = ?`).get(id, userId) as Customer | undefined;
+}
+
+/** Cliente noto a partire dall'indirizzo del mittente (per suggerire i dati all'estrazione). */
+export function findCustomerByEmail(userId: number, email: string | null): Customer | undefined {
+  const e = normEmail(email);
+  if (!e) return undefined;
+  return db
+    .prepare(`SELECT * FROM customers WHERE user_id = ? AND email = ? ORDER BY updated_at DESC LIMIT 1`)
+    .get(userId, e) as Customer | undefined;
+}
+
+/**
+ * Trova o crea la scheda cliente per un documento. Ordine: P.IVA → email (del
+ * cliente o del mittente) → nome normalizzato. Completa i campi vuoti della
+ * scheda con i dati nuovi. Ritorna null se non c'è nulla di identificabile.
+ */
+export function resolveCustomer(
+  userId: number,
+  d: { name: string | null; vat: string | null; email: string | null; address: string | null; senderEmail?: string | null },
+): Customer | null {
+  const vat = normVat(d.vat);
+  const email = normEmail(d.email);
+  const sender = normEmail(d.senderEmail);
+  const name = (d.name ?? "").trim();
+  const key = UNKNOWN_NAME.test(name) ? "" : nameKey(name);
+  if (!vat && !email && !sender && !key) return null;
+
+  let found: Customer | undefined;
+  if (vat) found = db.prepare(`SELECT * FROM customers WHERE user_id = ? AND vat = ?`).get(userId, vat) as Customer | undefined;
+  if (!found && email) found = findCustomerByEmail(userId, email);
+  if (!found && sender) found = findCustomerByEmail(userId, sender);
+  if (!found && key) found = db.prepare(`SELECT * FROM customers WHERE user_id = ? AND name_key = ?`).get(userId, key) as Customer | undefined;
+
+  if (found) {
+    // arricchisci solo i campi vuoti: le correzioni manuali dell'utente vincono sempre
+    const patch: Partial<Customer> = {};
+    if (!found.vat && vat) patch.vat = vat;
+    if (!found.email && (email ?? sender)) patch.email = email ?? sender;
+    if (!found.address && d.address?.trim()) patch.address = d.address.trim();
+    if (Object.keys(patch).length) updateCustomer(userId, found.id, patch);
+    return getCustomer(userId, found.id) ?? found;
+  }
+  if (!key && !vat) return null; // solo un'email: troppo poco per aprire una scheda
+  const info = db
+    .prepare(
+      `INSERT INTO customers (user_id, name, name_key, vat, email, address) VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(userId, name || vat || "Cliente", key || (vat ?? ""), vat, email ?? sender, d.address?.trim() || null);
+  return getCustomer(userId, Number(info.lastInsertRowid)) ?? null;
+}
+
+export function updateCustomer(
+  userId: number,
+  id: number,
+  patch: Partial<Pick<Customer, "name" | "vat" | "email" | "address" | "notes">>,
+): Customer | undefined {
+  const cur = getCustomer(userId, id);
+  if (!cur) return undefined;
+  const name = patch.name !== undefined ? patch.name.trim() || cur.name : cur.name;
+  db.prepare(
+    `UPDATE customers SET name = ?, name_key = ?, vat = ?, email = ?, address = ?, notes = ?, updated_at = datetime('now')
+     WHERE id = ? AND user_id = ?`,
+  ).run(
+    name,
+    nameKey(name),
+    patch.vat !== undefined ? normVat(patch.vat) : cur.vat,
+    patch.email !== undefined ? normEmail(patch.email) : cur.email,
+    patch.address !== undefined ? (patch.address?.trim() || null) : cur.address,
+    patch.notes !== undefined ? (patch.notes?.trim() || null) : cur.notes,
+    id,
+    userId,
+  );
+  return getCustomer(userId, id);
+}
+
+export function setDocumentCustomer(userId: number, docId: number, customerId: number | null): void {
+  db.prepare(`UPDATE documents SET customer_id = ? WHERE id = ? AND user_id = ?`).run(customerId, docId, userId);
+}
+
+/** Fonde `fromId` in `intoId`: sposta i documenti, completa i campi vuoti, elimina la scheda sorgente. */
+export function mergeCustomers(userId: number, fromId: number, intoId: number): Customer | undefined {
+  const from = getCustomer(userId, fromId);
+  const into = getCustomer(userId, intoId);
+  if (!from || !into || fromId === intoId) return undefined;
+  const tx = db.transaction(() => {
+    db.prepare(`UPDATE documents SET customer_id = ? WHERE customer_id = ? AND user_id = ?`).run(intoId, fromId, userId);
+    updateCustomer(userId, intoId, {
+      vat: into.vat ?? from.vat ?? undefined,
+      email: into.email ?? from.email ?? undefined,
+      address: into.address ?? from.address ?? undefined,
+      notes: [into.notes, from.notes].filter(Boolean).join("\n") || undefined,
+    });
+    db.prepare(`DELETE FROM customers WHERE id = ? AND user_id = ?`).run(fromId, userId);
+  });
+  tx();
+  return getCustomer(userId, intoId);
+}
+
+/** Elimina una scheda solo se non ha documenti (altrimenti si usa l'unione). */
+export function deleteCustomerIfEmpty(userId: number, id: number): "deleted" | "has_documents" | "not_found" {
+  if (!getCustomer(userId, id)) return "not_found";
+  const n = (db.prepare(`SELECT COUNT(*) AS n FROM documents WHERE customer_id = ? AND user_id = ?`).get(id, userId) as { n: number }).n;
+  if (n > 0) return "has_documents";
+  db.prepare(`DELETE FROM customers WHERE id = ? AND user_id = ?`).run(id, userId);
+  return "deleted";
+}
+
+export type CustomerSort = "name" | "recent" | "total";
+
+/** Riga della lista clienti: anagrafica + i tre numeri (conteggio e somma per tipo). */
+export interface CustomerListRow extends Customer {
+  doc_count: number;
+  last_doc_at: string | null;
+  n_preventivo: number; sum_preventivo: number;
+  n_ordine: number; sum_ordine: number;
+  n_fattura: number; sum_fattura: number;
+}
+
+const CUSTOMER_AGG = `
+  COUNT(d.id) AS doc_count,
+  MAX(d.created_at) AS last_doc_at,
+  SUM(CASE WHEN d.type='preventivo' THEN 1 ELSE 0 END) AS n_preventivo,
+  COALESCE(SUM(CASE WHEN d.type='preventivo' THEN json_extract(d.extracted_json,'$.total') END),0) AS sum_preventivo,
+  SUM(CASE WHEN d.type='ordine' THEN 1 ELSE 0 END) AS n_ordine,
+  COALESCE(SUM(CASE WHEN d.type='ordine' THEN json_extract(d.extracted_json,'$.total') END),0) AS sum_ordine,
+  SUM(CASE WHEN d.type='fattura' THEN 1 ELSE 0 END) AS n_fattura,
+  COALESCE(SUM(CASE WHEN d.type='fattura' THEN json_extract(d.extracted_json,'$.total') END),0) AS sum_fattura`;
+
+export function listCustomers(
+  userId: number,
+  qy: { q?: string; sort?: CustomerSort; limit: number; offset: number },
+): { items: CustomerListRow[]; total: number } {
+  const where = ["c.user_id = @userId"];
+  const params: Record<string, unknown> = { userId, limit: qy.limit, offset: qy.offset };
+  if (qy.q) {
+    where.push(`(c.name LIKE @q ESCAPE '\\' OR c.vat LIKE @q ESCAPE '\\' OR c.email LIKE @q ESCAPE '\\')`);
+    params.q = `%${qy.q.replace(/[%_\\]/g, (ch) => `\\${ch}`)}%`;
+  }
+  const orderBy: Record<CustomerSort, string> = {
+    name: "c.name COLLATE NOCASE ASC",
+    recent: "last_doc_at DESC NULLS LAST, c.name COLLATE NOCASE ASC",
+    total: "sum_fattura DESC, sum_ordine DESC, c.name COLLATE NOCASE ASC",
+  };
+  const whereClause = `WHERE ${where.join(" AND ")}`;
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM customers c ${whereClause}`).get(params) as { n: number }).n;
+  const items = db
+    .prepare(
+      `SELECT c.*, ${CUSTOMER_AGG}
+         FROM customers c LEFT JOIN documents d ON d.customer_id = c.id
+         ${whereClause}
+         GROUP BY c.id
+         ORDER BY ${orderBy[qy.sort ?? "recent"]}
+         LIMIT @limit OFFSET @offset`,
+    )
+    .all(params) as CustomerListRow[];
+  return { items, total };
+}
+
+export function getCustomerWithStats(userId: number, id: number): CustomerListRow | undefined {
+  return db
+    .prepare(
+      `SELECT c.*, ${CUSTOMER_AGG} FROM customers c LEFT JOIN documents d ON d.customer_id = c.id
+        WHERE c.id = ? AND c.user_id = ? GROUP BY c.id`,
+    )
+    .get(id, userId) as CustomerListRow | undefined;
+}
+
+/** Andamento mensile per tipo (base per un futuro report): [{month:'2026-09', type, n, sum}]. */
+export function customerMonthly(userId: number, id: number): { month: string; type: DocType; n: number; sum: number }[] {
+  return db
+    .prepare(
+      `SELECT substr(created_at,1,7) AS month, type,
+              COUNT(*) AS n, COALESCE(SUM(json_extract(extracted_json,'$.total')),0) AS sum
+         FROM documents WHERE customer_id = ? AND user_id = ?
+         GROUP BY month, type ORDER BY month DESC`,
+    )
+    .all(id, userId) as { month: string; type: DocType; n: number; sum: number }[];
+}
+
+/** Aggancia i documenti senza scheda (una volta, al primo avvio dopo la feature). */
+export function backfillCustomers(): number {
+  const rows = db
+    .prepare(`SELECT id, user_id, extracted_json FROM documents WHERE customer_id IS NULL ORDER BY id ASC`)
+    .all() as { id: number; user_id: number; extracted_json: string }[];
+  let linked = 0;
+  for (const r of rows) {
+    try {
+      const d = JSON.parse(r.extracted_json) as { customer_name?: string; customer_vat?: string | null; customer_email?: string | null; customer_address?: string | null };
+      const c = resolveCustomer(r.user_id, {
+        name: d.customer_name ?? null, vat: d.customer_vat ?? null, email: d.customer_email ?? null, address: d.customer_address ?? null,
+      });
+      if (c) { setDocumentCustomer(r.user_id, r.id, c.id); linked++; }
+    } catch { /* json corrotto: salta */ }
+  }
+  return linked;
 }
 
 /* ───────────────────────── Moduli Excel birrifici ───────────────────────── */
