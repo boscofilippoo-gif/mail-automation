@@ -66,7 +66,7 @@ export const env = {
     inboundWebhookKey: optional("INBOUND_WEBHOOK_KEY", ""),
     inboundDomain: optional("INBOUND_DOMAIN", "inbox.borustudio.it"),
     mailFrom: optional("MAIL_FROM", "accesso@borustudio.it"),
-    mailFromName: optional("MAIL_FROM_NAME", "BORU Mail Automation"),
+    mailFromName: optional("MAIL_FROM_NAME", "BORU mail"),
   },
 } as const;
 

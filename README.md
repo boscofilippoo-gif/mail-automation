@@ -1,4 +1,4 @@
-# Mail Automation · BORU studio
+# BORU mail · Mail Automation (BORU studio)
 
 Dalle email ai documenti, in automatico. L'utente fa login con Gmail, configura una o più
 **parole chiave** da cercare nell'oggetto delle mail, e ogni giorno il sistema:

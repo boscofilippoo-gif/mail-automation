@@ -52,7 +52,7 @@ export function renderClassic(doc: ExtractedDocument, s: TemplateSettings): stri
 
   const footerText = s.footer_note
     ? esc(s.footer_note)
-    : "Documento generato automaticamente da BORU Mail Automation a partire da un'email. I dati sono estratti tramite AI e vanno verificati prima dell'uso ufficiale.";
+    : "Documento generato automaticamente da BORU mail a partire da un'email. I dati sono estratti tramite AI e vanno verificati prima dell'uso ufficiale.";
 
   return `<!doctype html>
 <html lang="it">

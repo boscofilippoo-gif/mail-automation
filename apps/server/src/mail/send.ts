@@ -70,11 +70,11 @@ export async function sendMagicLink(email: string, url: string): Promise<void> {
   }
   await sendEmail({
     to: email,
-    subject: "Il tuo link di accesso a Mail Automation",
+    subject: "Il tuo link di accesso a BORU mail",
     html: `<!doctype html>
 <html lang="it"><body style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fcfaf6;color:#1a1613;padding:32px">
   <div style="max-width:480px;margin:0 auto">
-    <h2 style="margin:0 0 8px">Accedi a Mail Automation</h2>
+    <h2 style="margin:0 0 8px">Accedi a BORU mail</h2>
     <p style="color:#6b6357;line-height:1.6">Clicca il pulsante per entrare. Il link vale <strong>15 minuti</strong> e funziona una sola volta.</p>
     ${button(url, "Entra")}
     <p style="color:#9a9182;font-size:12px;line-height:1.6">Se non hai richiesto tu questo accesso, ignora questa email.<br/>BORU studio · borustudio.it</p>

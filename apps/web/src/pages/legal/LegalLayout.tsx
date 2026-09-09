@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { ArrowLeft, Mails } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import { Logo } from "@/components/Logo";
 
 /**
  * Layout per le pagine legali (privacy, termini): accessibili anche senza login.
@@ -10,9 +11,8 @@ export function LegalLayout({ title, updated, children }: { title: string; updat
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
-          <Link to="/" className="flex items-center gap-2 font-semibold tracking-tight">
-            <Mails className="size-5" style={{ color: "var(--accent)" }} />
-            Mail Automation
+          <Link to="/" className="flex items-center" aria-label="BORU mail, torna all'app">
+            <Logo className="h-6 w-auto" />
           </Link>
           <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
             <ArrowLeft className="size-4" />

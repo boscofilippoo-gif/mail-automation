@@ -160,7 +160,7 @@ authRouter.post("/magic", async (req, res) => {
 authRouter.get("/magic/verify", (req, res) => {
   const token = String(req.query.token ?? "");
   res.type("html").send(`<!doctype html>
-<html lang="it"><head><meta charset="utf-8"><title>Accesso — Mail Automation</title></head>
+<html lang="it"><head><meta charset="utf-8"><title>Accesso — BORU mail</title></head>
 <body style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#1a1613;color:#fcfaf6;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0">
   <form method="POST" action="/auth/magic/consume" style="text-align:center">
     <input type="hidden" name="token" value="${token.replace(/[^A-Za-z0-9_-]/g, "")}" />

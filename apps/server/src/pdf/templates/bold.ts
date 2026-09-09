@@ -109,7 +109,7 @@ export function renderBold(doc: ExtractedDocument, s: TemplateSettings): string 
 
     ${doc.notes ? `<div class="notes">${esc(doc.notes)}</div>` : ""}
 
-    <footer>${s.footer_note ? esc(s.footer_note) : "Documento generato automaticamente da BORU Mail Automation · dati estratti tramite AI, da verificare prima dell'uso ufficiale."}</footer>
+    <footer>${s.footer_note ? esc(s.footer_note) : "Documento generato automaticamente da BORU mail · dati estratti tramite AI, da verificare prima dell'uso ufficiale."}</footer>
   </div>
 </body>
 </html>`;

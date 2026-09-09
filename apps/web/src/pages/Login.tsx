@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, FileText, Loader2, Mails, Send, Sparkles } from "lucide-react";
+import { Logo } from "@/components/Logo";
 
 import { api, loginWithGoogle } from "@/api";
 
@@ -54,12 +55,7 @@ function MagicLinkForm() {
 export function Login() {
   return (
     <div className="flex min-h-[80vh] flex-col items-center justify-center text-center">
-      <p
-        className="mb-5 font-mono text-[11px] uppercase tracking-[0.22em]"
-        style={{ color: "var(--accent)" }}
-      >
-        BORU studio · mail automation
-      </p>
+      <Logo className="mb-8 h-12 w-auto md:h-14" title="BORU mail" />
       <h1 className="max-w-2xl text-4xl font-semibold leading-[1.12] tracking-tight md:text-5xl">
         Dalle email ai documenti,{" "}
         <span style={{ color: "var(--rosa)" }}>in automatico.</span>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { FileText, LogOut, Mails, Settings2, SlidersHorizontal, Table2 } from "lucide-react";
+import { FileText, LogOut, Settings2, SlidersHorizontal, Table2 } from "lucide-react";
+import { Logo } from "@/components/Logo";
 
 import { api, type Me } from "@/api";
 import { cn } from "@/lib/utils";
@@ -56,9 +57,8 @@ export function App() {
       {showNav && (
         <header className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur">
           <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
-            <Link to="/dashboard" className="flex items-center gap-2 font-semibold tracking-tight">
-              <Mails className="size-5" style={{ color: "var(--accent)" }} />
-              Mail Automation
+            <Link to="/dashboard" className="flex items-center" aria-label="BORU mail, vai ai documenti">
+              <Logo className="h-6 w-auto sm:h-7" />
             </Link>
             <nav className="flex items-center gap-1">
               {/* le schede stanno qui da sm in su; su mobile passano nella barra in basso */}
