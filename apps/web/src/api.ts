@@ -263,6 +263,7 @@ export const api = {
   deleteKeyword: (id: number) =>
     request<{ ok: true }>(`/api/keywords/${id}`, { method: "DELETE" }),
 
+  getActivity: () => request<{ lastCheckAt: string | null }>("/api/me/activity"),
   listDocuments: (f: DocumentFilters = {}) =>
     request<Page<DocumentItem>>(`/api/documents${toQuery(f)}`),
   listProcessed: (f: { status?: ProcessedItem["status"]; limit?: number; offset?: number } = {}) =>

@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import { requireAuth } from "../auth/session.js";
-import { getUserById, hasScope, setMailMode } from "../repo.js";
+import { getLastSync, getUserById, hasScope, setMailMode } from "../repo.js";
 
 const GMAIL_READONLY = "https://www.googleapis.com/auth/gmail.readonly";
 
@@ -21,6 +21,15 @@ meRouter.get("/", requireAuth, (req, res) => {
     mailMode: user.mail_mode,
     hasGmail: hasScope(user.id, GMAIL_READONLY),
   });
+});
+
+/**
+ * Ultimo controllo della casella: data dell'ultimo scan Gmail (manuale o
+ * automatico) oppure dell'ultima mail inoltrata ricevuta. Null = mai.
+ */
+meRouter.get("/activity", requireAuth, (req, res) => {
+  const last = getLastSync(req.userId!);
+  res.json({ lastCheckAt: last ? `${last.replace(" ", "T")}Z` : null });
 });
 
 /**

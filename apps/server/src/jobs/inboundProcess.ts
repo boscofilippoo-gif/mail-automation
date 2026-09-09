@@ -9,6 +9,7 @@ import {
   listActiveKeywords,
   recordProcessed,
   setPendingConfirmation,
+  touchSync,
 } from "../repo.js";
 import { processSingleMail } from "./dailyScan.js";
 import { notifyInboundOutcome } from "./notify.js";
@@ -153,6 +154,7 @@ async function processOne(item: BrevoInboundItem, inboundDomain: string): Promis
 
   // salva SEMPRE il contenuto (non ri-scaricabile a differenza di Gmail)
   insertInboundMail({ userId, mailId, subject, sender, date: item.SentAtDate ?? null, bodyText });
+  touchSync(userId); // "ultima mail ricevuta" in dashboard
 
   if (isProcessed(userId, mailId)) return; // retry Brevo o duplicato: già gestita
 

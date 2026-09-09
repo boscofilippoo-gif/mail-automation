@@ -852,6 +852,14 @@ export function listScanRuns(userId: number, limit = 20): ScanRun[] {
 
 /* ───────────────────────── Sync state ───────────────────────── */
 
+/** Ultimo controllo della casella (scan Gmail o mail inoltrata ricevuta), UTC "YYYY-MM-DD HH:MM:SS" o null. */
+export function getLastSync(userId: number): string | null {
+  const row = db.prepare(`SELECT last_run_at FROM sync_state WHERE user_id = ?`).get(userId) as
+    | { last_run_at: string | null }
+    | undefined;
+  return row?.last_run_at ?? null;
+}
+
 export function touchSync(userId: number): void {
   db.prepare(
     `INSERT INTO sync_state (user_id, last_run_at) VALUES (?, datetime('now'))

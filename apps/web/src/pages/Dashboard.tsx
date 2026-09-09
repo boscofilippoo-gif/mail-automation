@@ -88,6 +88,19 @@ const STATUS_BG: Record<SentStatus, string> = {
 const PAGE = 20;
 const PROCESSED_PAGE = 50;
 
+/** "oggi alle 07:00", "ieri alle 18:32", "3 set alle 09:15". */
+function formatWhen(iso: string): string {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+  const today = new Date();
+  const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (sameDay(d, today)) return `oggi alle ${time}`;
+  if (sameDay(d, yesterday)) return `ieri alle ${time}`;
+  return `${d.toLocaleDateString("it-IT", { day: "numeric", month: "short" })} alle ${time}`;
+}
+
 type Period = "7d" | "30d" | "month" | "all";
 const PERIOD_LABEL: Record<Period, string> = {
   "7d": "Ultimi 7 giorni",
@@ -156,6 +169,8 @@ export function Dashboard() {
   const [processed, setProcessed] = useState<ProcessedItem[]>([]);
   const [processedTotal, setProcessedTotal] = useState(0);
   const [processedStatus, setProcessedStatus] = useState<ProcessedItem["status"] | "">("");
+  // ultimo controllo della casella (null = mai; undefined = non ancora caricato)
+  const [lastCheckAt, setLastCheckAt] = useState<string | null | undefined>(undefined);
 
   // filtri nell'URL (?q=…&type=…): la fonte di verità è la query string
   const [searchParams, setSearchParams] = useSearchParams();
@@ -222,6 +237,7 @@ export function Dashboard() {
       })
       .catch(() => {});
     api.listScanHistory().then(setHistory).catch(() => {});
+    api.getActivity().then((a) => setLastCheckAt(a.lastCheckAt)).catch(() => {});
   }
   // cambio filtri → si riparte dalla prima pagina
   useEffect(() => {
@@ -360,6 +376,18 @@ export function Dashboard() {
               ? "I PDF generati dalle mail che inoltri: arrivano da soli, nessuna scansione necessaria."
               : "I PDF generati dalle tue mail. Lo scan gira ogni giorno; puoi anche lanciarlo subito."}
           </p>
+          {lastCheckAt !== undefined && (
+            <p className="mt-1.5 inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/80">
+              <span className="inline-block size-1.5 rounded-full" style={{ background: lastCheckAt ? "var(--azzurro)" : "var(--border)" }} />
+              {inoltro
+                ? lastCheckAt
+                  ? `Ultima mail ricevuta ${formatWhen(lastCheckAt)}`
+                  : "Nessuna mail ricevuta finora"
+                : lastCheckAt
+                  ? `Ultimo controllo ${formatWhen(lastCheckAt)} · prossimo automatico alle 07:00`
+                  : "Nessun controllo eseguito finora · il primo automatico è alle 07:00"}
+            </p>
+          )}
         </div>
         {!inoltro && (
           <div className="flex gap-2">
