@@ -1158,7 +1158,12 @@ function DocCard({
   let primary: React.ReactNode;
   if (reviewCount > 0) {
     primary = (
-      <Link to={`/documents/${doc.id}/edit`} className={primaryCls} style={{ background: "#e2b53f", color: "var(--nero)" }}>
+      <Link
+        to={`/documents/${doc.id}/edit`}
+        className={primaryCls}
+        style={{ background: "#e2b53f", color: "var(--nero)" }}
+        title={doc.review!.map((r) => r.reason).join("\n")}
+      >
         <HelpCircle className="size-4" />
         Controlla {plural(reviewCount, "campo", "campi")}
       </Link>
@@ -1218,11 +1223,6 @@ function DocCard({
       <h3 className="mt-4 truncate text-lg font-semibold">{customerLabel(d.customer_name)}</h3>
       <p className="mt-1 text-sm text-muted-foreground">
         {plural(d.line_items.length, "riga", "righe")} · Totale {fmt(d.total)}
-        {reviewCount > 0 && (
-          <span title={doc.review!.map((r) => r.reason).join("\n")} style={{ color: "#e2b53f" }}>
-            {" "}· {plural(reviewCount, "campo da controllare", "campi da controllare")}
-          </span>
-        )}
       </p>
 
       {primary}

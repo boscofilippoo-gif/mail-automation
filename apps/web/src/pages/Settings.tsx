@@ -129,7 +129,7 @@ export function Settings() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Impostazioni</h1>
           <p className="mt-2 max-w-2xl text-muted-foreground">
-            Casella, notifiche e aspetto dei documenti. L'anteprima a destra si aggiorna mentre modifichi.
+            Casella, notifiche e aspetto dei documenti. L'anteprima si aggiorna mentre modifichi.
           </p>
         </div>
         <button
@@ -380,10 +380,16 @@ function TemplateGallery({
             key={t.id}
             onClick={() => onChange(t.id)}
             className={cn(
-              "rounded-2xl border p-3 text-left transition-colors",
-              value === t.id ? "border-accent bg-foreground/5" : "border-border hover:border-accent/40",
+              "relative rounded-2xl border p-3 text-left transition-colors",
+              value === t.id ? "border-accent bg-foreground/5 ring-2 ring-accent/40" : "border-border hover:border-accent/40",
             )}
+            aria-pressed={value === t.id}
           >
+            {value === t.id && (
+              <span className="absolute right-3 top-3 inline-flex size-6 items-center justify-center rounded-full" style={{ background: "var(--azzurro)", color: "var(--nero)" }}>
+                <Check className="size-3.5" />
+              </span>
+            )}
             <Thumb id={t.id} accent={previewAccent} />
             <p className="mt-3 text-sm font-semibold">{t.name}</p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t.description}</p>
@@ -393,10 +399,16 @@ function TemplateGallery({
           <button
             onClick={() => onChange("custom")}
             className={cn(
-              "rounded-2xl border p-3 text-left transition-colors",
-              value === "custom" ? "border-accent bg-foreground/5" : "border-border hover:border-accent/40",
+              "relative rounded-2xl border p-3 text-left transition-colors",
+              value === "custom" ? "border-accent bg-foreground/5 ring-2 ring-accent/40" : "border-border hover:border-accent/40",
             )}
+            aria-pressed={value === "custom"}
           >
+            {value === "custom" && (
+              <span className="absolute right-3 top-3 inline-flex size-6 items-center justify-center rounded-full" style={{ background: "var(--azzurro)", color: "var(--nero)" }}>
+                <Check className="size-3.5" />
+              </span>
+            )}
             <div className="flex h-28 w-full items-center justify-center rounded-md bg-[#fcfaf6]">
               <Sparkles className="size-8" style={{ color: previewAccent }} />
             </div>

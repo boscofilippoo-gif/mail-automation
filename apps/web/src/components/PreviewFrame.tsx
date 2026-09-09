@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Eye, Loader2, X } from "lucide-react";
 
 /**
@@ -6,6 +6,45 @@ import { Eye, Loader2, X } from "lucide-react";
  * su mobile diventa un bottone flottante "Anteprima" che apre un pannello a
  * tutto schermo (il form lunghissimo non spinge più il foglio in fondo alla pagina).
  */
+/** Larghezza di una pagina A4 a 96 dpi: il PDF viene reso a questa misura. */
+const A4_WIDTH_PX = 794;
+
+/**
+ * Foglio A4 intero: l'iframe è largo 794px e viene scalato al contenitore,
+ * così si vede tutta la pagina in piccolo invece della sola parte alta.
+ */
+function A4Sheet({ html, title }: { html: string; title: string }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(0.5);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const update = () => setScale(el.clientWidth / A4_WIDTH_PX);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div
+      ref={box}
+      className="relative aspect-[210/297] w-full overflow-hidden rounded-xl border border-border bg-white shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]"
+    >
+      {html ? (
+        <iframe
+          sandbox=""
+          srcDoc={html}
+          title={title}
+          className="absolute left-0 top-0 origin-top-left border-0"
+          style={{ width: A4_WIDTH_PX, height: A4_WIDTH_PX * (297 / 210), transform: `scale(${scale})` }}
+        />
+      ) : (
+        <div className="flex h-full items-center justify-center text-sm text-black/40">Anteprima in caricamento…</div>
+      )}
+    </div>
+  );
+}
+
 export function PreviewFrame({ html, loading, title = "Anteprima" }: { html: string; loading: boolean; title?: string }) {
   const [open, setOpen] = useState(false);
 
@@ -19,15 +58,7 @@ export function PreviewFrame({ html, loading, title = "Anteprima" }: { html: str
     };
   }, [open]);
 
-  const sheet = (
-    <div className="aspect-[210/297] w-full overflow-hidden rounded-xl border border-border bg-white shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
-      {html ? (
-        <iframe sandbox="" srcDoc={html} title={title} className="h-full w-full border-0" />
-      ) : (
-        <div className="flex h-full items-center justify-center text-sm text-black/40">Anteprima in caricamento…</div>
-      )}
-    </div>
-  );
+  const sheet = <A4Sheet html={html} title={title} />;
 
   return (
     <>
