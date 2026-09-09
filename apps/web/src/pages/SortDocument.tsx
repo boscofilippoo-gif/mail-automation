@@ -148,7 +148,7 @@ export function SortDocument() {
               <div key={t.breweryKey} className="rounded-2xl border border-border bg-card p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="flex items-center gap-2 font-semibold">
-                    <FileSpreadsheet className="size-4" style={{ color: "var(--azzurro)" }} />
+                    <FileSpreadsheet className="size-4" style={{ color: "var(--accent)" }} />
                     {t.name}
                     <span className="text-sm font-normal text-muted-foreground">
                       · {items.length} {items.length === 1 ? "prodotto" : "prodotti"}

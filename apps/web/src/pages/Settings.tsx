@@ -26,7 +26,7 @@ function MailboxSection() {
 
   return (
     <section>
-      <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Casella collegata</h2>
+      <h2 className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">Casella collegata</h2>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-5 text-sm">
         <div>
           {me?.mailMode === "gmail" && (
@@ -35,7 +35,7 @@ function MailboxSection() {
           {me?.mailMode === "inoltro" && (
             <>
               <p><strong>Inoltro automatico</strong></p>
-              <p className="mt-1 font-mono text-xs" style={{ color: "var(--azzurro)" }}>{address ?? "…"}</p>
+              <p className="mt-1 font-mono text-xs" style={{ color: "var(--accent)" }}>{address ?? "…"}</p>
             </>
           )}
           {!me?.mailMode && <p className="text-muted-foreground">Nessuna casella collegata.</p>}
@@ -126,10 +126,9 @@ export function Settings() {
     <div>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Impostazioni documento</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Impostazioni</h1>
           <p className="mt-2 max-w-2xl text-muted-foreground">
-            Scegli il template e personalizza i tuoi documenti. L'anteprima si aggiorna mentre
-            modifichi.
+            Casella, notifiche e aspetto dei documenti. L'anteprima a destra si aggiorna mentre modifichi.
           </p>
         </div>
         <button
@@ -144,25 +143,29 @@ export function Settings() {
       </div>
       {error && <p className="mt-3 text-sm" style={{ color: "var(--rosa)" }}>{error}</p>}
 
-      <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_420px]">
+      <SectionIndex />
+
+      <div className="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_420px]">
         <div className="space-y-10">
-          <MailboxSection />
-          <NotificationsSection draft={draft} onPatch={patch} />
-          <TemplateGallery
-            value={draft.template_id}
-            accent={draft.accent_color}
-            hasCustom={Boolean(draft.has_custom_template)}
-            onChange={(id) => patch({ template_id: id })}
-          />
-          <CustomTemplateSection draft={draft} onPatch={patch} onError={setError} />
-          <BrewerySection onError={setError} />
-          <AccentPicker value={draft.accent_color} onChange={(c) => patch({ accent_color: c })} />
-          <LogoUploader value={draft.logo_data_url} onChange={(l) => patch({ logo_data_url: l })} onError={setError} />
-          <CompanyForm draft={draft} onPatch={patch} />
+          <div id="sec-casella" className="scroll-mt-32"><MailboxSection /></div>
+          <div id="sec-notifiche" className="scroll-mt-32"><NotificationsSection draft={draft} onPatch={patch} /></div>
+          <div id="sec-template" className="scroll-mt-32">
+            <TemplateGallery
+              value={draft.template_id}
+              accent={draft.accent_color}
+              hasCustom={Boolean(draft.has_custom_template)}
+              onChange={(id) => patch({ template_id: id })}
+            />
+          </div>
+          <div id="sec-su-misura" className="scroll-mt-32"><CustomTemplateSection draft={draft} onPatch={patch} onError={setError} /></div>
+          <div id="sec-fornitori" className="scroll-mt-32"><BrewerySection onError={setError} /></div>
+          <div id="sec-colore" className="scroll-mt-32"><AccentPicker value={draft.accent_color} onChange={(c) => patch({ accent_color: c })} /></div>
+          <div id="sec-logo" className="scroll-mt-32"><LogoUploader value={draft.logo_data_url} onChange={(l) => patch({ logo_data_url: l })} onError={setError} /></div>
+          <div id="sec-azienda" className="scroll-mt-32"><CompanyForm draft={draft} onPatch={patch} /></div>
 
           {/* firma per le bozze di risposta Gmail */}
-          <section>
-            <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Firma email</h2>
+          <section id="sec-firma" className="scroll-mt-32">
+            <h2 className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">Firma email</h2>
             <p className="mt-2 text-sm text-muted-foreground">
               Aggiunta in fondo alle bozze di risposta create in Gmail.
             </p>
@@ -182,6 +185,60 @@ export function Settings() {
   );
 }
 
+/* ───────────────────────── Indice sezioni ───────────────────────── */
+
+const SECTIONS: { id: string; label: string }[] = [
+  { id: "sec-casella", label: "Casella" },
+  { id: "sec-notifiche", label: "Notifiche" },
+  { id: "sec-template", label: "Template" },
+  { id: "sec-su-misura", label: "Su misura" },
+  { id: "sec-fornitori", label: "Fornitori" },
+  { id: "sec-colore", label: "Colore" },
+  { id: "sec-logo", label: "Logo" },
+  { id: "sec-azienda", label: "Azienda" },
+  { id: "sec-firma", label: "Firma" },
+];
+
+/** Indice orizzontale, appiccicato sotto la barra: la pagina è lunga, così si salta alla sezione. */
+function SectionIndex() {
+  const [active, setActive] = useState<string>(SECTIONS[0]!.id);
+  useEffect(() => {
+    const els = SECTIONS.map((s) => document.getElementById(s.id)).filter((e): e is HTMLElement => Boolean(e));
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) setActive(visible[0].target.id);
+      },
+      { rootMargin: "-120px 0px -60% 0px" },
+    );
+    els.forEach((e) => obs.observe(e));
+    return () => obs.disconnect();
+  }, []);
+  return (
+    <nav
+      aria-label="Sezioni"
+      className="sticky top-[73px] z-10 -mx-6 mt-6 flex gap-1.5 overflow-x-auto border-b border-border bg-background/85 px-6 py-2.5 backdrop-blur [scrollbar-width:none]"
+    >
+      {SECTIONS.map((s) => (
+        <a
+          key={s.id}
+          href={`#${s.id}`}
+          onClick={(e) => {
+            e.preventDefault();
+            document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+          className={cn(
+            "shrink-0 rounded-full border px-3.5 py-1 text-sm transition-colors",
+            active === s.id ? "border-accent text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {s.label}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
 /* ───────────────────────── Notifiche email ───────────────────────── */
 
 function NotificationsSection({
@@ -196,11 +253,11 @@ function NotificationsSection({
   const inoltro = me?.mailMode === "inoltro";
   return (
     <section>
-      <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Notifiche email</h2>
+      <h2 className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">Notifiche email</h2>
       <div className="mt-3 rounded-2xl border border-border bg-card p-5">
         <div className="flex items-start justify-between gap-6">
           <div className="flex items-start gap-4">
-            <Bell className="mt-1 size-5 shrink-0" style={{ color: "var(--azzurro)" }} />
+            <Bell className="mt-1 size-5 shrink-0" style={{ color: "var(--accent)" }} />
             <div>
               <h3 className="font-semibold">Avvisami quando c'è un documento nuovo</h3>
               <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
@@ -315,7 +372,7 @@ function TemplateGallery({
   const previewAccent = accent ?? "#ef95b4";
   return (
     <section>
-      <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Template</h2>
+      <h2 className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">Template</h2>
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         {TEMPLATES.map((t) => (
           <button
@@ -479,7 +536,7 @@ function CustomTemplateSection({
 
   return (
     <section>
-      <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">
+      <h2 className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">
         Il tuo template su misura
       </h2>
       <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
@@ -517,7 +574,7 @@ function CustomTemplateSection({
         </div>
 
         {applied && (
-          <p className="text-sm" style={{ color: "var(--azzurro)" }}>
+          <p className="text-sm" style={{ color: "var(--accent)" }}>
             Stile applicato alle impostazioni: controlla l'anteprima e premi Salva per confermare.
           </p>
         )}
@@ -641,7 +698,7 @@ function BrewerySection({ onError }: { onError: (e: string | null) => void }) {
 
   return (
     <section>
-      <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">
+      <h2 className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">
         Moduli ordine dei fornitori
       </h2>
       <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
@@ -656,7 +713,7 @@ function BrewerySection({ onError }: { onError: (e: string | null) => void }) {
           <div key={t.brewery_key} className="space-y-3 rounded-2xl border border-border bg-card p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="flex items-center gap-2 text-sm">
-                <FileSpreadsheet className="size-4" style={{ color: "var(--azzurro)" }} />
+                <FileSpreadsheet className="size-4" style={{ color: "var(--accent)" }} />
                 <strong>{t.name}</strong>
                 <span className="text-muted-foreground">
                   · {t.mapping.length} prodotti · quantità in colonna {t.qty_column}
@@ -750,7 +807,7 @@ function MappingEditor({
 function AccentPicker({ value, onChange }: { value: string | null; onChange: (c: string | null) => void }) {
   return (
     <section>
-      <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Colore accento</h2>
+      <h2 className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">Colore accento</h2>
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button
           onClick={() => onChange(null)}
@@ -817,7 +874,7 @@ function LogoUploader({
 
   return (
     <section>
-      <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Logo</h2>
+      <h2 className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">Logo</h2>
       <div className="mt-4 flex items-center gap-4">
         {value ? (
           <>
@@ -855,7 +912,7 @@ const inputCls =
 function CompanyForm({ draft, onPatch }: { draft: UserSettings; onPatch: (p: Partial<UserSettings>) => void }) {
   return (
     <section>
-      <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Dati azienda</h2>
+      <h2 className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">Dati azienda</h2>
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <input className={inputCls} placeholder="Nome azienda" value={draft.company_name ?? ""} onChange={(e) => onPatch({ company_name: e.target.value || null })} />
         <input className={inputCls} placeholder="P.IVA / CF" value={draft.company_vat ?? ""} onChange={(e) => onPatch({ company_vat: e.target.value || null })} />
@@ -900,7 +957,7 @@ function LivePreview({ draft }: { draft: UserSettings }) {
 
   return (
     <div className="lg:sticky lg:top-24 lg:self-start">
-      <h2 className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">
+      <h2 className="flex items-center gap-2 font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">
         Anteprima
         {loading && <Loader2 className="size-3 animate-spin" />}
       </h2>

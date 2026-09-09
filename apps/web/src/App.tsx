@@ -5,6 +5,7 @@ import { LogOut, Mails } from "lucide-react";
 import { api, type Me } from "@/api";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/Toast";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -56,17 +57,18 @@ export function App() {
         <header className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur">
           <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
             <Link to="/dashboard" className="flex items-center gap-2 font-semibold tracking-tight">
-              <Mails className="size-5" style={{ color: "var(--azzurro)" }} />
+              <Mails className="size-5" style={{ color: "var(--accent)" }} />
               Mail Automation
             </Link>
             <nav className="flex items-center gap-1">
               <TabLink to="/dashboard">Documenti</TabLink>
-              <TabLink to="/keywords">Rilevamento</TabLink>
+              <TabLink to="/keywords">Regole</TabLink>
               <TabLink to="/listino">Listino</TabLink>
               <TabLink to="/settings">Impostazioni</TabLink>
+              <ThemeToggle className="ml-2 inline-flex size-8 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:text-foreground" />
               <button
                 onClick={handleLogout}
-                className="ml-2 inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
               >
                 <LogOut className="size-4" />
                 Esci

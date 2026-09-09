@@ -244,7 +244,7 @@ export function EditDocument() {
 
           {/* Cliente */}
           <section>
-            <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Destinatario</h2>
+            <h2 className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">Destinatario</h2>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <input className={inputCls} {...warn("customer_name")} placeholder="Nome cliente" value={draft.customer_name} onChange={(e) => patch({ customer_name: e.target.value })} />
               <input className={inputCls} {...warn("customer_vat")} placeholder="P.IVA / CF" value={draft.customer_vat ?? ""} onChange={(e) => patch({ customer_vat: e.target.value || null })} />
@@ -255,7 +255,7 @@ export function EditDocument() {
 
           {/* Meta */}
           <section>
-            <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Documento</h2>
+            <h2 className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">Documento</h2>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <input className={inputCls} {...warn("document_number")} placeholder="Numero (es. 2026-001)" value={draft.document_number ?? ""} onChange={(e) => patch({ document_number: e.target.value || null })} />
               <input className={inputCls} {...warn("document_date")} type="date" value={draft.document_date ?? ""} onChange={(e) => patch({ document_date: e.target.value || null })} />
@@ -266,7 +266,7 @@ export function EditDocument() {
           {/* Righe */}
           <section>
             <div className="flex items-center justify-between">
-              <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Righe</h2>
+              <h2 className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">Righe</h2>
               <button
                 onClick={() => patch({ line_items: [...draft.line_items, { description: "", quantity: 1, unit_price: null, total: null }] })}
                 className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs transition-colors hover:border-accent"
@@ -337,7 +337,7 @@ export function EditDocument() {
 
           {/* Note */}
           <section>
-            <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Note</h2>
+            <h2 className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">Note</h2>
             <textarea
               className={cn(inputCls, "mt-3")}
               rows={3}
@@ -380,7 +380,7 @@ function EditPreview({ draft }: { draft: ExtractedDocument }) {
 
   return (
     <div className="lg:sticky lg:top-24 lg:self-start">
-      <h2 className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">
+      <h2 className="flex items-center gap-2 font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">
         Anteprima
         {loading && <Loader2 className="size-3 animate-spin" />}
       </h2>

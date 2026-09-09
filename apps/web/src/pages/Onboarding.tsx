@@ -68,7 +68,7 @@ export function Onboarding() {
         </p>
 
         <div className="mt-6 flex items-center gap-2 rounded-2xl border border-border bg-card p-4">
-          <code className="min-w-0 flex-1 truncate text-sm" style={{ color: "var(--azzurro)" }}>
+          <code className="min-w-0 flex-1 truncate text-sm" style={{ color: "var(--accent)" }}>
             {address}
           </code>
           <button
@@ -87,7 +87,7 @@ export function Onboarding() {
         >
           {pending ? (
             <>
-              <p className="font-semibold" style={{ color: "var(--azzurro)" }}>
+              <p className="font-semibold" style={{ color: "var(--accent)" }}>
                 📬 Codice di conferma ricevuto da Gmail:
               </p>
               <p className="mt-1 break-all font-mono text-lg">{pending}</p>
@@ -179,17 +179,17 @@ export function Onboarding() {
             "transition-[border-color,transform,background-color] duration-200 hover:-translate-y-1 hover:border-accent hover:bg-foreground/[0.05]",
           )}
         >
-          <Forward className="size-6" style={{ color: "var(--azzurro)" }} />
+          <Forward className="size-6" style={{ color: "var(--accent)" }} />
           <h2 className="mt-4 flex items-center gap-2 font-semibold">
             Inoltro automatico
-            <ShieldCheck className="size-4" style={{ color: "var(--azzurro)" }} />
+            <ShieldCheck className="size-4" style={{ color: "var(--accent)" }} />
           </h2>
           <ul className="mt-3 space-y-1.5 text-sm leading-relaxed text-muted-foreground">
             <li>✓ Funziona con qualsiasi casella: Outlook, Aruba, PEC…</li>
             <li>✓ Nessun avviso di sicurezza, nessuna autorizzazione extra</li>
             <li>– Richiede 2 minuti di configurazione guidata, una volta</li>
           </ul>
-          <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium transition-transform group-hover:translate-x-1" style={{ color: "var(--azzurro)" }}>
+          <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium transition-transform group-hover:translate-x-1" style={{ color: "var(--accent)" }}>
             Scegli inoltro <ArrowRight className="size-4" />
           </span>
         </button>

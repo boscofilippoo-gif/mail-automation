@@ -78,7 +78,11 @@ export function Keywords() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight">Rilevamento mail</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Regole di rilevamento</h1>
+      <p className="mt-2 max-w-2xl text-muted-foreground">
+        Decidi come l'app riconosce le mail da trasformare in documenti: con l'AI, con parole chiave
+        nell'oggetto, o entrambe.
+      </p>
 
       {/* ── Smart scan AI ── */}
       <div className="mt-8 flex items-start justify-between gap-6 rounded-2xl border border-border bg-card p-6">
@@ -101,7 +105,7 @@ export function Keywords() {
       {/* ── Bozza automatica ── */}
       <div className="mt-4 flex items-start justify-between gap-6 rounded-2xl border border-border bg-card p-6">
         <div className="flex items-start gap-4">
-          <Send className="mt-1 size-5 shrink-0" style={{ color: "var(--azzurro)" }} />
+          <Send className="mt-1 size-5 shrink-0" style={{ color: "var(--accent)" }} />
           <div>
             <h2 className="font-semibold">Bozza di risposta automatica</h2>
             <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">

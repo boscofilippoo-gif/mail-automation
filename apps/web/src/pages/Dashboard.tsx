@@ -51,7 +51,7 @@ const RUN_KIND_LABEL: Record<ScanRun["kind"], string> = {
 
 const RUN_KIND_BG: Record<ScanRun["kind"], string> = {
   manuale: "color-mix(in oklab, var(--azzurro) 22%, transparent)",
-  giornaliero: "color-mix(in oklab, var(--porcellana) 12%, transparent)",
+  giornaliero: "color-mix(in oklab, var(--foreground) 12%, transparent)",
   periodo: "color-mix(in oklab, var(--rosa) 18%, transparent)",
 };
 
@@ -86,7 +86,7 @@ const STATUS_LABEL: Record<SentStatus, string> = {
 const STATUS_BG: Record<SentStatus, string> = {
   da_inviare: "color-mix(in oklab, var(--rosa) 18%, transparent)",
   bozza: "color-mix(in oklab, var(--azzurro) 22%, transparent)",
-  inviato: "color-mix(in oklab, var(--porcellana) 12%, transparent)",
+  inviato: "color-mix(in oklab, var(--foreground) 12%, transparent)",
 };
 
 const PAGE = 20;
@@ -482,7 +482,7 @@ export function Dashboard() {
             )}
             {rangePhase === "running" && rangeProgress && (
               <span className="inline-flex items-center gap-3 text-sm">
-                <Loader2 className="size-4 animate-spin" style={{ color: "var(--azzurro)" }} />
+                <Loader2 className="size-4 animate-spin" style={{ color: "var(--accent)" }} />
                 <span className="text-muted-foreground">
                   Analizzate {rangeProgress.analyzed} · ancora {rangeProgress.remaining}
                 </span>
@@ -695,7 +695,7 @@ function ScanHistory({ history, onChanged }: { history: ScanRun[]; onChanged: ()
     <div className="mt-8">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 font-mono text-sm uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:text-foreground"
+        className="flex items-center gap-2 font-mono text-sm uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:text-foreground"
       >
         Storico scansioni
         <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
@@ -828,7 +828,7 @@ function ProcessedLog({
   return (
     <div className="mt-14">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-mono text-sm uppercase tracking-[0.16em] text-muted-foreground">
+        <h2 className="font-mono text-sm uppercase tracking-[0.12em] text-muted-foreground">
           Mail processate
           <span className="ml-2 normal-case tracking-normal text-muted-foreground/70">
             {processed.length < total ? `${processed.length} di ${total}` : total}
@@ -905,7 +905,7 @@ function ProcessedRow({ p, first, onChanged }: { p: ProcessedItem; first: boolea
         </span>
         {p.matched_keyword === "auto" ? (
           <span
-            className="shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider"
+            className="shrink-0 rounded-full px-2 py-0.5 font-mono text-xs uppercase tracking-wider"
             style={{ background: "color-mix(in oklab, var(--rosa) 18%, transparent)" }}
           >
             AI
@@ -920,7 +920,7 @@ function ProcessedRow({ p, first, onChanged }: { p: ProcessedItem; first: boolea
               p.status === "done"
                 ? "color-mix(in oklab, var(--azzurro) 22%, transparent)"
                 : p.status === "skipped"
-                  ? "color-mix(in oklab, var(--porcellana) 12%, transparent)"
+                  ? "color-mix(in oklab, var(--foreground) 12%, transparent)"
                   : "color-mix(in oklab, var(--rosa) 22%, transparent)",
           }}
         >
@@ -1165,7 +1165,7 @@ function DocCard({
     );
   } else if (doc.sentStatus === "inviato") {
     primary = (
-      <a href={api.pdfUrl(doc.id, true)} className={primaryCls} style={{ background: "color-mix(in oklab, var(--porcellana) 10%, transparent)" }}>
+      <a href={api.pdfUrl(doc.id, true)} className={primaryCls} style={{ background: "color-mix(in oklab, var(--foreground) 10%, transparent)" }}>
         <Download className="size-4" />
         Scarica PDF
       </a>
@@ -1262,7 +1262,7 @@ function DocCard({
             <div
               role="menu"
               className="absolute right-0 z-10 mt-1 w-60 overflow-hidden rounded-xl border border-border py-1 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.8)]"
-              style={{ background: "var(--nero)" }}
+              style={{ background: "var(--background)" }}
             >
               <a href={api.pdfUrl(doc.id, true)} className={menuItem} onClick={() => setMenuOpen(false)}>
                 <Download className="size-4" /> Scarica PDF
@@ -1336,9 +1336,9 @@ function FirstRunInoltro() {
       <span className="block text-center text-foreground">Ancora nessun documento. Facciamo una prova?</span>
       <span className="mx-auto mt-5 block max-w-md space-y-3 text-sm">
         <span className="block">
-          <span className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">1 · Il tuo indirizzo</span>
+          <span className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">1 · Il tuo indirizzo</span>
           <span className="mt-1.5 flex items-center gap-2 rounded-xl border border-border bg-card px-3.5 py-2">
-            <span className="min-w-0 flex-1 truncate font-mono text-xs" style={{ color: "var(--azzurro)" }}>{address ?? "…"}</span>
+            <span className="min-w-0 flex-1 truncate font-mono text-xs" style={{ color: "var(--accent)" }}>{address ?? "…"}</span>
             <button onClick={copy} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-3 py-1 text-xs transition-colors hover:border-accent">
               {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
               {copied ? "Copiato" : "Copia"}
@@ -1350,7 +1350,7 @@ function FirstRunInoltro() {
           </span>
         </span>
         <span className="block">
-          <span className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">2 · Una mail di prova</span>
+          <span className="font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">2 · Una mail di prova</span>
           <span className="mt-1.5 block">
             Inviati una mail con oggetto <strong>Preventivo</strong> e qualche riga tipo «2 casse di X, 1 fusto di Y».
             Entro un minuto il documento compare qui, pronto da controllare.

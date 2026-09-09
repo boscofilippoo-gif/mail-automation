@@ -128,11 +128,11 @@ export function Listino() {
           <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card p-6">
             <div className="flex items-center gap-4">
               {state.source_type === "sheet" ? (
-                <FileSpreadsheet className="size-6" style={{ color: "var(--azzurro)" }} />
+                <FileSpreadsheet className="size-6" style={{ color: "var(--accent)" }} />
               ) : state.source_type === "api" ? (
-                <Plug className="size-6" style={{ color: "var(--azzurro)" }} />
+                <Plug className="size-6" style={{ color: "var(--accent)" }} />
               ) : (
-                <FileText className="size-6" style={{ color: "var(--azzurro)" }} />
+                <FileText className="size-6" style={{ color: "var(--accent)" }} />
               )}
               <div>
                 <p className="font-semibold">
@@ -194,7 +194,7 @@ export function Listino() {
         <div className="mt-8 grid grid-cols-1 gap-5 md:grid-cols-2">
           {/* Google Sheet */}
           <div className="rounded-2xl border border-border bg-card p-6">
-            <FileSpreadsheet className="size-6" style={{ color: "var(--azzurro)" }} />
+            <FileSpreadsheet className="size-6" style={{ color: "var(--accent)" }} />
             <h2 className="mt-4 font-semibold">Collega un Google Sheet</h2>
             <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
               Incolla il link del foglio (colonne: descrizione e prezzo; codice e unità
@@ -240,7 +240,7 @@ export function Listino() {
 
           {/* Connettore API */}
           <div className="rounded-2xl border border-border bg-card p-6 md:col-span-2">
-            <Plug className="size-6" style={{ color: "var(--azzurro)" }} />
+            <Plug className="size-6" style={{ color: "var(--accent)" }} />
             <h2 className="mt-4 font-semibold">Collega un'API</h2>
             <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
               Il listino sta nel tuo gestionale o su un sito protetto? Se espone un'API REST che

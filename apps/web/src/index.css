@@ -13,7 +13,7 @@
   /* token semantici (tema scuro, come il sito BORU) */
   --background: var(--nero);
   --foreground: var(--porcellana);
-  --muted-foreground: color-mix(in oklab, var(--porcellana) 62%, transparent);
+  --muted-foreground: color-mix(in oklab, var(--porcellana) 72%, transparent);
   --border: color-mix(in oklab, var(--porcellana) 14%, transparent);
   --card: color-mix(in oklab, var(--porcellana) 4%, transparent);
   --accent: var(--azzurro);
@@ -21,6 +21,19 @@
   --ring: var(--azzurro);
 
   --radius: 16px;
+}
+
+/* Tema chiaro (opzionale, interruttore in alto a destra): stessi colori atomici,
+   token semantici invertiti. Azzurro e rosa restano identici: sono già chiari,
+   e il testo sopra di loro è sempre --nero. */
+:root[data-theme="light"] {
+  --background: var(--porcellana);
+  --foreground: var(--nero);
+  --muted-foreground: color-mix(in oklab, var(--nero) 64%, transparent);
+  --border: color-mix(in oklab, var(--nero) 14%, transparent);
+  --card: #ffffff;
+  --accent: #5aa9cf; /* azzurro più saturo: su fondo chiaro l'originale sparisce come bordo */
+  --ring: #5aa9cf;
 }
 
 @theme inline {

@@ -49,7 +49,7 @@ export function SourceMailSection({
         className="flex w-full items-center justify-between px-5 py-3.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <span className="inline-flex items-center gap-2">
-          <Mail className="size-4" style={{ color: "var(--azzurro)" }} />
+          <Mail className="size-4" style={{ color: "var(--accent)" }} />
           Mail originale del cliente
         </span>
         <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />

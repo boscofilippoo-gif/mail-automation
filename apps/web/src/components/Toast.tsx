@@ -52,13 +52,13 @@ export function Toaster() {
             "animate-[toast-in_.2s_ease-out]",
           )}
           style={{
-            background: "var(--nero)",
+            background: "var(--background)",
             borderColor: t.kind === "success" ? "var(--azzurro)" : "var(--rosa)",
-            color: "var(--porcellana)",
+            color: "var(--foreground)",
           }}
         >
           {t.kind === "success" ? (
-            <Check className="size-4" style={{ color: "var(--azzurro)" }} />
+            <Check className="size-4" style={{ color: "var(--accent)" }} />
           ) : (
             <AlertTriangle className="size-4" style={{ color: "var(--rosa)" }} />
           )}

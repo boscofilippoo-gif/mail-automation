@@ -11,7 +11,7 @@ export function LegalLayout({ title, updated, children }: { title: string; updat
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
           <Link to="/" className="flex items-center gap-2 font-semibold tracking-tight">
-            <Mails className="size-5" style={{ color: "var(--azzurro)" }} />
+            <Mails className="size-5" style={{ color: "var(--accent)" }} />
             Mail Automation
           </Link>
           <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
@@ -23,7 +23,7 @@ export function LegalLayout({ title, updated, children }: { title: string; updat
 
       <main className="mx-auto max-w-3xl px-6 py-14">
         <h1 className="font-title text-3xl font-semibold tracking-tight md:text-4xl">{title}</h1>
-        <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">
+        <p className="mt-2 font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">
           Ultimo aggiornamento: {updated}
         </p>
         <div className="legal-body mt-10 space-y-6 leading-relaxed text-muted-foreground">{children}</div>

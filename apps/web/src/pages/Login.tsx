@@ -56,7 +56,7 @@ export function Login() {
     <div className="flex min-h-[80vh] flex-col items-center justify-center text-center">
       <p
         className="mb-5 font-mono text-[11px] uppercase tracking-[0.22em]"
-        style={{ color: "var(--azzurro)" }}
+        style={{ color: "var(--accent)" }}
       >
         BORU studio · mail automation
       </p>
@@ -109,8 +109,8 @@ function Step({
 }) {
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
-      <Icon className="size-5" style={{ color: "var(--azzurro)" }} />
-      <h3 className="mt-3 font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">
+      <Icon className="size-5" style={{ color: "var(--accent)" }} />
+      <h3 className="mt-3 font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">
         {title}
       </h3>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{text}</p>
