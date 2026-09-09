@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowLeft, HelpCircle, Loader2, Plus, RotateCcw, Send, T
 import { api, type ExtractedDocument, type LineItem, type Me, type ReviewFlag } from "@/api";
 import { cn } from "@/lib/utils";
 import { SourceMailSection } from "@/components/SourceMailSection";
+import { toast } from "@/components/Toast";
 
 const inputCls =
   "w-full rounded-xl border border-border bg-card px-3.5 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-accent";
@@ -106,15 +107,24 @@ export function EditDocument() {
     });
   }
 
+  /** Salva e resta in pagina: il server ha già azzerato i dubbi e congelato l'originale. */
   async function save() {
     if (!draft) return;
     setSaving(true);
     setError(null);
     try {
-      await api.updateDocument(Number(id), draft);
-      navigate("/dashboard");
+      const saved = await api.updateDocument(Number(id), draft);
+      setDraft(recalc(saved.data));
+      setReview([]);
+      // il server ha congelato l'estrazione originale al primo salvataggio: rileggila
+      if (!original) {
+        api.getDocument(Number(id)).then((fresh) => setOriginal(fresh.originalData ?? null)).catch(() => {});
+      }
+      toast.success("Salvato: PDF aggiornato");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Errore nel salvataggio");
+      toast.error("Salvataggio non riuscito");
+    } finally {
       setSaving(false);
     }
   }
@@ -127,10 +137,12 @@ export function EditDocument() {
     setError(null);
     try {
       await api.updateDocument(Number(id), draft);
+      setReview([]);
       const r = await api.createDraft(Number(id));
       if ("error" in r) {
         setError(r.needsReauth ? "Servono nuovi permessi Google: torna alla dashboard e premi 'Riautorizza con Google'." : r.error);
       } else {
+        toast.success("Salvato e bozza creata in Gmail");
         navigate("/dashboard");
       }
     } catch (e) {

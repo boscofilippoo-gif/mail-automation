@@ -4,6 +4,7 @@ import { LogOut, Mails } from "lucide-react";
 
 import { api, type Me } from "@/api";
 import { cn } from "@/lib/utils";
+import { Toaster } from "@/components/Toast";
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -77,6 +78,7 @@ export function App() {
       <main className="mx-auto max-w-5xl px-6 py-10">
         <Outlet context={{ me, refreshMe }} />
       </main>
+      <Toaster />
     </div>
   );
 }

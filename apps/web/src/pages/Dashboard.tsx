@@ -8,6 +8,7 @@ import {
   Download,
   ExternalLink,
   HelpCircle,
+  MoreHorizontal,
   Eye,
   FileSpreadsheet,
   FileText,
@@ -40,6 +41,7 @@ import {
   type SentStatus,
 } from "@/api";
 import { cn } from "@/lib/utils";
+import { toast } from "@/components/Toast";
 
 const RUN_KIND_LABEL: Record<ScanRun["kind"], string> = {
   manuale: "Manuale",
@@ -73,6 +75,8 @@ const EMPTY_RESULT: ScanResult = {
   remaining: 0,
 };
 
+const DOC_LABEL: Record<DocType, string> = { fattura: "Fattura", preventivo: "Preventivo", ordine: "Ordine" };
+
 const STATUS_LABEL: Record<SentStatus, string> = {
   da_inviare: "Da inviare",
   bozza: "Bozza in Gmail",
@@ -87,6 +91,14 @@ const STATUS_BG: Record<SentStatus, string> = {
 
 const PAGE = 20;
 const PROCESSED_PAGE = 50;
+
+/** Il modello a volte scrive letteralmente "<UNKNOWN>" o "N/A": trattali come non rilevato. */
+function customerLabel(name: string | null | undefined): string {
+  const s = (name ?? "").trim();
+  if (!s || /^<?\s*(unknown|n\/?a|non\s+(rilevato|disponibile)|sconosciuto)\s*>?$/i.test(s)) return "Cliente non rilevato";
+  return s;
+}
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** "oggi alle 07:00", "ieri alle 18:32", "3 set alle 09:15". */
 function formatWhen(iso: string): string {
@@ -517,9 +529,6 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Storico scansioni */}
-      <ScanHistory history={history} onChanged={reload} />
-
       {/* Filtri (nascosti finché non c'è almeno un documento nell'archivio) */}
       {(docsTotal > 0 || isFiltered(filters)) && (
         <DocFilters
@@ -553,13 +562,7 @@ export function Dashboard() {
           <FileText className="mx-auto size-8 text-muted-foreground" />
           <p className="mt-4 text-muted-foreground">
             {inoltro ? (
-              <>
-                Ancora nessun documento. Inoltra una mail al tuo{" "}
-                <Link to="/settings" className="underline decoration-dotted underline-offset-4">
-                  indirizzo personale
-                </Link>{" "}
-                e comparirà qui da solo entro un minuto.
-              </>
+              <FirstRunInoltro />
             ) : (
               <>
                 Ancora nessun documento. Configura una{" "}
@@ -590,6 +593,9 @@ export function Dashboard() {
           )}
         </>
       )}
+
+      {/* Storico scansioni: solo Gmail (in inoltro non si scansiona), chiuso di default */}
+      {!inoltro && <ScanHistory history={history} onChanged={reload} />}
 
       {/* Log mail processate */}
       {(processed.length > 0 || processedStatus) && (
@@ -683,7 +689,7 @@ function DocFilters({
 /* ───────────────── Storico scansioni ───────────────── */
 
 function ScanHistory({ history, onChanged }: { history: ScanRun[]; onChanged: () => void }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   return (
     <div className="mt-8">
@@ -1073,60 +1079,115 @@ function DocCard({
   const inoltro = cardMe?.mailMode === "inoltro";
   const d = doc.data;
   const [drafting, setDrafting] = useState(false);
-  const [cardError, setCardError] = useState<string | null>(null);
   const [replyOpen, setReplyOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const accent = doc.type === "fattura" ? "var(--azzurro)" : "var(--rosa)";
+  const reviewCount = doc.review?.length ?? 0;
   const fmt = (n: number | null) =>
     n === null
       ? "—"
       : new Intl.NumberFormat("it-IT", { style: "currency", currency: d.currency || "EUR" }).format(n);
+
+  // chiudi il menu cliccando fuori
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) {
+        setMenuOpen(false);
+        setConfirmDelete(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menuOpen]);
 
   async function prepareDraft() {
     if (doc.sentStatus === "bozza" && !confirm("Esiste già una bozza in Gmail per questo documento. Crearne un'altra?")) {
       return;
     }
     setDrafting(true);
-    setCardError(null);
     try {
       const r = await api.createDraft(doc.id);
       if ("error" in r) {
         if (r.needsReauth) onNeedsReauth();
-        else setCardError(r.error);
+        else toast.error(r.error);
       } else {
+        toast.success("Bozza creata in Gmail, col PDF allegato");
         onChanged();
       }
     } catch (e) {
-      setCardError(e instanceof Error ? e.message : "Errore");
+      toast.error(e instanceof Error ? e.message : "Errore nella creazione della bozza");
     } finally {
       setDrafting(false);
     }
   }
 
-  async function markSent() {
-    await api.setStatus(doc.id, "inviato").catch(() => {});
-    onChanged();
-  }
-
-  /** Annulla "inviato": torna a "bozza" se esiste una bozza Gmail, altrimenti a "da inviare". */
-  async function unmarkSent() {
-    await api.setStatus(doc.id, doc.draftId ? "bozza" : "da_inviare").catch(() => {});
-    onChanged();
-  }
-
-  const [deleting, setDeleting] = useState(false);
-  async function remove() {
-    const who = d.customer_name || "questo documento";
-    if (!confirm(`Eliminare ${doc.type} di ${who}? Il PDF verrà rimosso. L'operazione non si può annullare.`)) return;
-    setDeleting(true);
-    setCardError(null);
+  async function setSent(sent: boolean) {
+    setMenuOpen(false);
+    const next: SentStatus = sent ? "inviato" : doc.draftId ? "bozza" : "da_inviare";
     try {
-      await api.deleteDocument(doc.id);
+      await api.setStatus(doc.id, next);
+      toast.success(sent ? "Segnato come inviato" : "Riportato a " + STATUS_LABEL[next].toLowerCase());
       onChanged();
     } catch (e) {
-      setCardError(e instanceof Error ? e.message : "Errore nell'eliminazione");
-      setDeleting(false);
+      toast.error(e instanceof Error ? e.message : "Errore");
     }
   }
+
+  async function remove() {
+    setDeleting(true);
+    try {
+      await api.deleteDocument(doc.id);
+      toast.success(`${DOC_LABEL[doc.type]} di ${customerLabel(d.customer_name)} eliminato`);
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore nell'eliminazione");
+      setDeleting(false);
+    } finally {
+      setMenuOpen(false);
+      setConfirmDelete(false);
+    }
+  }
+
+  /* Azione principale: una sola, decisa dallo stato del documento. */
+  const primaryCls =
+    "mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium disabled:opacity-60";
+  let primary: React.ReactNode;
+  if (reviewCount > 0) {
+    primary = (
+      <Link to={`/documents/${doc.id}/edit`} className={primaryCls} style={{ background: "#e2b53f", color: "var(--nero)" }}>
+        <HelpCircle className="size-4" />
+        Controlla {plural(reviewCount, "campo", "campi")}
+      </Link>
+    );
+  } else if (doc.sentStatus === "inviato") {
+    primary = (
+      <a href={api.pdfUrl(doc.id, true)} className={primaryCls} style={{ background: "color-mix(in oklab, var(--porcellana) 10%, transparent)" }}>
+        <Download className="size-4" />
+        Scarica PDF
+      </a>
+    );
+  } else if (inoltro) {
+    primary = (
+      <button onClick={() => setReplyOpen(true)} className={primaryCls} style={{ background: "var(--azzurro)", color: "var(--nero)" }}>
+        <Send className="size-4" />
+        Genera risposta
+      </button>
+    );
+  } else {
+    primary = (
+      <button onClick={prepareDraft} disabled={drafting} className={primaryCls} style={{ background: "var(--azzurro)", color: "var(--nero)" }}>
+        {drafting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+        {drafting ? "Preparo la bozza…" : doc.sentStatus === "bozza" ? "Rifai la bozza" : "Prepara risposta"}
+      </button>
+    );
+  }
+
+  const menuItem =
+    "flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors hover:bg-foreground/[0.06]";
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
@@ -1138,17 +1199,6 @@ function DocCard({
           <span className="rounded-full px-2.5 py-0.5 text-xs" style={{ background: STATUS_BG[doc.sentStatus] }}>
             {STATUS_LABEL[doc.sentStatus]}
           </span>
-          {(doc.review?.length ?? 0) > 0 && (
-            <Link
-              to={`/documents/${doc.id}/edit`}
-              title={doc.review!.map((r) => r.reason).join("\n")}
-              className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs"
-              style={{ background: "color-mix(in oklab, #e2b53f 28%, transparent)" }}
-            >
-              <HelpCircle className="size-3" />
-              Da controllare ({doc.review!.length})
-            </Link>
-          )}
         </div>
         <span className="inline-flex items-center gap-2 font-mono text-xs text-muted-foreground/70">
           {new Date(doc.createdAt + "Z").toLocaleDateString("it-IT")}
@@ -1165,52 +1215,21 @@ function DocCard({
           )}
         </span>
       </div>
-      <h3 className="mt-4 truncate text-lg font-semibold">{d.customer_name || "Cliente non rilevato"}</h3>
+      <h3 className="mt-4 truncate text-lg font-semibold">{customerLabel(d.customer_name)}</h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        {d.line_items.length} righe · Totale {fmt(d.total)}
+        {plural(d.line_items.length, "riga", "righe")} · Totale {fmt(d.total)}
+        {reviewCount > 0 && (
+          <span title={doc.review!.map((r) => r.reason).join("\n")} style={{ color: "#e2b53f" }}>
+            {" "}· {plural(reviewCount, "campo da controllare", "campi da controllare")}
+          </span>
+        )}
       </p>
-      {cardError && <p className="mt-2 text-xs" style={{ color: "var(--rosa)" }}>{cardError}</p>}
 
-      {inoltro ? (
-        <button
-          onClick={() => setReplyOpen(true)}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium"
-          style={{ background: "var(--azzurro)", color: "var(--nero)" }}
-        >
-          <Send className="size-4" />
-          Genera risposta
-        </button>
-      ) : (
-        <button
-          onClick={prepareDraft}
-          disabled={drafting}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium disabled:opacity-60"
-          style={{ background: "var(--azzurro)", color: "var(--nero)" }}
-        >
-          {drafting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-          {drafting ? "Preparo la bozza…" : "Prepara risposta"}
-        </button>
-      )}
+      {primary}
       {replyOpen && <ReplyModal docId={doc.id} onClose={() => setReplyOpen(false)} />}
-      {doc.sentStatus !== "inviato" ? (
-        <button
-          onClick={markSent}
-          className="mt-2 inline-flex w-full items-center justify-center gap-1.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <Check className="size-3.5" />
-          Segna come inviato
-        </button>
-      ) : (
-        <button
-          onClick={unmarkSent}
-          title="Riporta il documento allo stato precedente"
-          className="mt-2 inline-flex w-full items-center justify-center gap-1.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <Undo2 className="size-3.5" />
-          Segna come non inviato
-        </button>
-      )}
-      <div className="mt-5 flex gap-2">
+
+      {/* azioni secondarie: le due frequenti + menu col resto */}
+      <div className="mt-2 flex gap-2">
         <a
           href={api.pdfUrl(doc.id)}
           target="_blank"
@@ -1227,43 +1246,117 @@ function DocCard({
           <Pencil className="size-4" />
           Modifica
         </Link>
-        <a
-          href={api.pdfUrl(doc.id, true)}
-          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border py-2 text-sm transition-colors hover:border-accent"
-        >
-          <Download className="size-4" />
-          Scarica
-        </a>
-        <button
-          onClick={remove}
-          disabled={deleting}
-          title="Elimina documento"
-          aria-label="Elimina documento"
-          className="inline-flex items-center justify-center rounded-lg border border-border px-3 py-2 text-sm transition-colors hover:border-[var(--rosa)] hover:text-[var(--rosa)] disabled:opacity-60"
-        >
-          {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-        </button>
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-label="Altre azioni"
+            aria-expanded={menuOpen}
+            className={cn(
+              "inline-flex h-full items-center justify-center rounded-lg border px-3 text-sm transition-colors hover:border-accent",
+              menuOpen ? "border-accent" : "border-border",
+            )}
+          >
+            <MoreHorizontal className="size-4" />
+          </button>
+          {menuOpen && (
+            <div
+              role="menu"
+              className="absolute right-0 z-10 mt-1 w-60 overflow-hidden rounded-xl border border-border py-1 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.8)]"
+              style={{ background: "var(--nero)" }}
+            >
+              <a href={api.pdfUrl(doc.id, true)} className={menuItem} onClick={() => setMenuOpen(false)}>
+                <Download className="size-4" /> Scarica PDF
+              </a>
+              {doc.breweryCount === 1 && (
+                <a href={api.xlsxUrl(doc.id)} className={menuItem} onClick={() => setMenuOpen(false)}>
+                  <FileSpreadsheet className="size-4" /> Scarica Excel fornitore
+                </a>
+              )}
+              {(doc.breweryCount ?? 0) >= 2 && (
+                <Link to={`/documents/${doc.id}/sort`} className={menuItem}>
+                  <FileSpreadsheet className="size-4" /> Smista per fornitori
+                </Link>
+              )}
+              {doc.sentStatus !== "inviato" ? (
+                <button onClick={() => setSent(true)} className={menuItem}>
+                  <Check className="size-4" /> Segna come inviato
+                </button>
+              ) : (
+                <button onClick={() => setSent(false)} className={menuItem}>
+                  <Undo2 className="size-4" /> Segna come non inviato
+                </button>
+              )}
+              <div className="my-1 border-t border-border" />
+              {confirmDelete ? (
+                <div className="px-3.5 py-2 text-sm">
+                  <p className="text-muted-foreground">Eliminare definitivamente? Il PDF verrà rimosso.</p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      onClick={remove}
+                      disabled={deleting}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-sm font-medium disabled:opacity-60"
+                      style={{ background: "var(--rosa)", color: "var(--nero)" }}
+                    >
+                      {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                      Elimina
+                    </button>
+                    <button onClick={() => setConfirmDelete(false)} className="flex-1 rounded-lg border border-border py-1.5 text-sm">
+                      Annulla
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmDelete(true)} className={menuItem} style={{ color: "var(--rosa)" }}>
+                  <Trash2 className="size-4" /> Elimina documento
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-      {doc.breweryCount === 1 && (
-        <a
-          href={api.xlsxUrl(doc.id)}
-          className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium"
-          style={{ background: "var(--azzurro)", color: "var(--nero)" }}
-        >
-          <FileSpreadsheet className="size-4" />
-          Scarica Excel fornitore
-        </a>
-      )}
-      {(doc.breweryCount ?? 0) >= 2 && (
-        <Link
-          to={`/documents/${doc.id}/sort`}
-          className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium"
-          style={{ background: "var(--azzurro)", color: "var(--nero)" }}
-        >
-          <FileSpreadsheet className="size-4" />
-          Smista per fornitori
-        </Link>
-      )}
     </div>
+  );
+}
+
+/** Primo accesso in modalità inoltro: l'alias da copiare e una prova guidata. */
+function FirstRunInoltro() {
+  const [address, setAddress] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    api.getInboundAddress().then((a) => setAddress(a.address)).catch(() => {});
+  }, []);
+  async function copy() {
+    if (!address) return;
+    await navigator.clipboard.writeText(address).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
+  return (
+    <span className="block text-left">
+      <span className="block text-center text-foreground">Ancora nessun documento. Facciamo una prova?</span>
+      <span className="mx-auto mt-5 block max-w-md space-y-3 text-sm">
+        <span className="block">
+          <span className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">1 · Il tuo indirizzo</span>
+          <span className="mt-1.5 flex items-center gap-2 rounded-xl border border-border bg-card px-3.5 py-2">
+            <span className="min-w-0 flex-1 truncate font-mono text-xs" style={{ color: "var(--azzurro)" }}>{address ?? "…"}</span>
+            <button onClick={copy} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-3 py-1 text-xs transition-colors hover:border-accent">
+              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+              {copied ? "Copiato" : "Copia"}
+            </button>
+          </span>
+          <span className="mt-1.5 block text-xs text-muted-foreground">
+            Imposta l'inoltro automatico dalla tua casella verso questo indirizzo (guida in{" "}
+            <Link to="/onboarding" className="underline decoration-dotted underline-offset-4">Impostazioni → Cambia modalità</Link>).
+          </span>
+        </span>
+        <span className="block">
+          <span className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">2 · Una mail di prova</span>
+          <span className="mt-1.5 block">
+            Inviati una mail con oggetto <strong>Preventivo</strong> e qualche riga tipo «2 casse di X, 1 fusto di Y».
+            Entro un minuto il documento compare qui, pronto da controllare.
+          </span>
+        </span>
+      </span>
+    </span>
   );
 }
