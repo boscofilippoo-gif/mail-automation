@@ -402,7 +402,7 @@ export function Dashboard() {
           )}
         </div>
         {!inoltro && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setShowRange((v) => !v)}
               disabled={rangePhase === "running"}

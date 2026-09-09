@@ -12,6 +12,7 @@ import {
 } from "@/api";
 import { cn } from "@/lib/utils";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
+import { PreviewFrame } from "@/components/PreviewFrame";
 
 /** Stato del collegamento posta: modalità attiva, alias, cambio. */
 function MailboxSection() {
@@ -217,7 +218,7 @@ function SectionIndex() {
   return (
     <nav
       aria-label="Sezioni"
-      className="sticky top-[73px] z-10 -mx-6 mt-6 flex gap-1.5 overflow-x-auto border-b border-border bg-background/85 px-6 py-2.5 backdrop-blur [scrollbar-width:none]"
+      className="sticky top-[57px] z-10 -mx-4 mt-6 flex gap-1.5 overflow-x-auto border-b border-border bg-background/85 px-4 py-2.5 backdrop-blur [scrollbar-width:none] sm:top-[73px] sm:-mx-6 sm:px-6"
     >
       {SECTIONS.map((s) => (
         <a
@@ -955,22 +956,5 @@ function LivePreview({ draft }: { draft: UserSettings }) {
     return () => clearTimeout(t);
   }, [draft]);
 
-  return (
-    <div className="lg:sticky lg:top-24 lg:self-start">
-      <h2 className="flex items-center gap-2 font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">
-        Anteprima
-        {loading && <Loader2 className="size-3 animate-spin" />}
-      </h2>
-      <div className="mt-4 aspect-[210/297] w-full overflow-hidden rounded-xl border border-border bg-white shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
-        {html ? (
-          <iframe sandbox="" srcDoc={html} title="Anteprima documento" className="h-full w-full border-0" />
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-black/40">Anteprima in caricamento…</div>
-        )}
-      </div>
-      <p className="mt-3 text-xs text-muted-foreground">
-        Documento d'esempio: i tuoi PDF reali useranno i dati estratti dalle mail.
-      </p>
-    </div>
-  );
+  return <PreviewFrame html={html} loading={loading} />;
 }

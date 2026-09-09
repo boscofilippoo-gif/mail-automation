@@ -170,15 +170,16 @@ export function Listino() {
 
           {/* anteprima articoli */}
           <div className="mt-6 overflow-hidden rounded-xl border border-border">
-            <div className="grid grid-cols-[100px_1fr_80px_110px] gap-2 border-b border-border px-4 py-2.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            <div className="hidden gap-2 border-b border-border px-4 py-2.5 font-mono text-xs uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[100px_1fr_80px_110px]">
               <span>Codice</span><span>Descrizione</span><span>Unità</span><span className="text-right">Prezzo</span>
             </div>
             {state.preview.map((it, i) => (
-              <div key={i} className="grid grid-cols-[100px_1fr_80px_110px] gap-2 border-b border-border/50 px-4 py-2.5 text-sm last:border-0">
-                <span className="truncate font-mono text-xs text-muted-foreground">{it.code ?? "—"}</span>
-                <span className="truncate">{it.description}</span>
-                <span className="text-muted-foreground">{it.unit ?? "—"}</span>
-                <span className="text-right">
+              <div key={i} className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 border-b border-border/50 px-4 py-2.5 text-sm last:border-0 sm:grid-cols-[100px_1fr_80px_110px] sm:gap-2">
+                {/* mobile: descrizione + prezzo in alto, codice e unità in piccolo sotto */}
+                <span className="truncate font-mono text-xs text-muted-foreground order-3 sm:order-none">{it.code ?? "—"}{it.unit ? <span className="sm:hidden"> · {it.unit}</span> : null}</span>
+                <span className="truncate order-1 sm:order-none">{it.description}</span>
+                <span className="hidden text-muted-foreground sm:block">{it.unit ?? "—"}</span>
+                <span className="text-right order-2 sm:order-none">
                   {new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(it.unit_price)}
                 </span>
               </div>

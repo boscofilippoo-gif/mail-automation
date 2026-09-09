@@ -6,6 +6,7 @@ import { api, type ExtractedDocument, type LineItem, type Me, type ReviewFlag } 
 import { cn } from "@/lib/utils";
 import { SourceMailSection } from "@/components/SourceMailSection";
 import { toast } from "@/components/Toast";
+import { PreviewFrame } from "@/components/PreviewFrame";
 
 const inputCls =
   "w-full rounded-xl border border-border bg-card px-3.5 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-accent";
@@ -280,33 +281,46 @@ export function EditDocument() {
                 <div
                   key={i}
                   className={cn(
-                    "grid grid-cols-[1fr_72px_110px_100px_32px] items-center gap-2 rounded-xl border p-2",
+                    // mobile: descrizione + cestino sulla prima riga, q.tà/prezzo/totale sotto;
+                    // da sm: tutto su una riga a colonne fisse
+                    "grid grid-cols-[1fr_32px] gap-2 rounded-xl border p-2 sm:grid-cols-[1fr_72px_110px_100px_32px] sm:items-center",
                     li.unit_price === null ? "border-[color:var(--rosa)]" : "border-border",
                   )}
                 >
                   <input className={inputCls} {...warn(`line_items[${i}].description`)} placeholder="Descrizione" value={li.description} onChange={(e) => patchItem(i, { description: e.target.value })} />
-                  <input
-                    className={cn(inputCls, "text-right")}
-                    inputMode="decimal"
-                    title="Quantità"
-                    {...warn(`line_items[${i}].quantity`)}
-                    value={String(li.quantity)}
-                    onChange={(e) => patchItem(i, { quantity: parseNum(e.target.value) ?? 0 })}
-                  />
-                  <input
-                    className={cn(inputCls, "text-right", li.unit_price === null && "placeholder:text-[color:var(--rosa)]")}
-                    inputMode="decimal"
-                    placeholder="prezzo mancante"
-                    title="Prezzo unitario"
-                    {...warn(`line_items[${i}].unit_price`)}
-                    value={li.unit_price === null ? "" : String(li.unit_price)}
-                    onChange={(e) => patchItem(i, { unit_price: parseNum(e.target.value) })}
-                  />
-                  <span className="text-right text-sm text-muted-foreground">{fmt(li.total)}</span>
+                  <div className="col-span-2 grid grid-cols-3 gap-2 sm:contents">
+                    <label className="block sm:contents">
+                      <span className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground sm:hidden">Q.tà</span>
+                      <input
+                        className={cn(inputCls, "text-right")}
+                        inputMode="decimal"
+                        title="Quantità"
+                        {...warn(`line_items[${i}].quantity`)}
+                        value={String(li.quantity)}
+                        onChange={(e) => patchItem(i, { quantity: parseNum(e.target.value) ?? 0 })}
+                      />
+                    </label>
+                    <label className="block sm:contents">
+                      <span className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground sm:hidden">Prezzo</span>
+                      <input
+                        className={cn(inputCls, "text-right", li.unit_price === null && "placeholder:text-[color:var(--rosa)]")}
+                        inputMode="decimal"
+                        placeholder="mancante"
+                        title="Prezzo unitario"
+                        {...warn(`line_items[${i}].unit_price`)}
+                        value={li.unit_price === null ? "" : String(li.unit_price)}
+                        onChange={(e) => patchItem(i, { unit_price: parseNum(e.target.value) })}
+                      />
+                    </label>
+                    <span className="block sm:contents">
+                      <span className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground sm:hidden">Totale</span>
+                      <span className="block py-2 text-right text-sm text-muted-foreground">{fmt(li.total)}</span>
+                    </span>
+                  </div>
                   <button
                     onClick={() => patch({ line_items: draft.line_items.filter((_, j) => j !== i) })}
                     aria-label="Elimina riga"
-                    className="rounded-full p-1.5 text-muted-foreground transition-colors hover:text-foreground"
+                    className="col-start-2 row-start-1 justify-self-end rounded-full p-1.5 text-muted-foreground transition-colors hover:text-foreground sm:col-start-auto sm:row-start-auto"
                   >
                     <Trash2 className="size-4" />
                   </button>
@@ -378,19 +392,5 @@ function EditPreview({ draft }: { draft: ExtractedDocument }) {
     return () => clearTimeout(t);
   }, [draft]);
 
-  return (
-    <div className="lg:sticky lg:top-24 lg:self-start">
-      <h2 className="flex items-center gap-2 font-mono text-[0.8rem] uppercase tracking-[0.12em] text-muted-foreground">
-        Anteprima
-        {loading && <Loader2 className="size-3 animate-spin" />}
-      </h2>
-      <div className="mt-4 aspect-[210/297] w-full overflow-hidden rounded-xl border border-border bg-white shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
-        {html ? (
-          <iframe sandbox="" srcDoc={html} title="Anteprima documento" className="h-full w-full border-0" />
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-black/40">Anteprima in caricamento…</div>
-        )}
-      </div>
-    </div>
-  );
+  return <PreviewFrame html={html} loading={loading} />;
 }

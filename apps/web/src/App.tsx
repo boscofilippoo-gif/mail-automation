@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { LogOut, Mails } from "lucide-react";
+import { FileText, LogOut, Mails, Settings2, SlidersHorizontal, Table2 } from "lucide-react";
 
 import { api, type Me } from "@/api";
 import { cn } from "@/lib/utils";
@@ -55,33 +55,74 @@ export function App() {
     <div className="min-h-screen bg-background text-foreground">
       {showNav && (
         <header className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur">
-          <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+          <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
             <Link to="/dashboard" className="flex items-center gap-2 font-semibold tracking-tight">
               <Mails className="size-5" style={{ color: "var(--accent)" }} />
               Mail Automation
             </Link>
             <nav className="flex items-center gap-1">
-              <TabLink to="/dashboard">Documenti</TabLink>
-              <TabLink to="/keywords">Regole</TabLink>
-              <TabLink to="/listino">Listino</TabLink>
-              <TabLink to="/settings">Impostazioni</TabLink>
+              {/* le schede stanno qui da sm in su; su mobile passano nella barra in basso */}
+              <div className="hidden items-center gap-1 sm:flex">
+                <TabLink to="/dashboard">Documenti</TabLink>
+                <TabLink to="/keywords">Regole</TabLink>
+                <TabLink to="/listino">Listino</TabLink>
+                <TabLink to="/settings">Impostazioni</TabLink>
+              </div>
               <ThemeToggle className="ml-2 inline-flex size-8 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:text-foreground" />
               <button
                 onClick={handleLogout}
-                className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                aria-label="Esci"
+                className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground sm:px-3.5"
               >
                 <LogOut className="size-4" />
-                Esci
+                <span className="hidden sm:inline">Esci</span>
               </button>
             </nav>
           </div>
         </header>
       )}
-      <main className="mx-auto max-w-5xl px-6 py-10">
+      <main className={cn("mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10", showNav && "pb-24 sm:pb-10")}>
         <Outlet context={{ me, refreshMe }} />
       </main>
+      {showNav && <MobileTabBar />}
       <Toaster />
     </div>
+  );
+}
+
+/** Barra schede fissa in basso, solo mobile: pollice, non mouse. */
+function MobileTabBar() {
+  const items = [
+    { to: "/dashboard", label: "Documenti", Icon: FileText },
+    { to: "/keywords", label: "Regole", Icon: SlidersHorizontal },
+    { to: "/listino", label: "Listino", Icon: Table2 },
+    { to: "/settings", label: "Impostazioni", Icon: Settings2 },
+  ];
+  return (
+    <nav
+      aria-label="Navigazione principale"
+      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-border bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden"
+    >
+      {items.map(({ to, label, Icon }) => (
+        <NavLink
+          key={to}
+          to={to}
+          className={({ isActive }) =>
+            cn(
+              "flex flex-col items-center gap-1 py-2.5 text-[11px] transition-colors",
+              isActive ? "text-foreground" : "text-muted-foreground",
+            )
+          }
+        >
+          {({ isActive }) => (
+            <>
+              <Icon className="size-5" style={isActive ? { color: "var(--accent)" } : undefined} />
+              {label}
+            </>
+          )}
+        </NavLink>
+      ))}
+    </nav>
   );
 }
 
