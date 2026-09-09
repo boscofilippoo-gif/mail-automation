@@ -59,7 +59,7 @@ export function renderBold(doc: ExtractedDocument, s: TemplateSettings): string 
     <div class="band-top">
       <div class="brand">
         ${esc(s.company_name ?? "BORU studio")}
-        <small>${s.company_name ? [s.company_vat ? `P.IVA ${s.company_vat}` : null, s.company_phone].filter(Boolean).map((x) => esc(x)).join(" · ") : "Mail Automation"}</small>
+        <small>${s.company_name ? [s.company_vat ? `P.IVA ${s.company_vat}` : null, s.company_phone].filter(Boolean).map((x) => esc(x)).join(" · ") : "BORU mail"}</small>
       </div>
       ${s.logo_data_url ? `<img src="${esc(s.logo_data_url)}" alt="" style="max-height:52px;max-width:180px;object-fit:contain" />` : ""}
     </div>

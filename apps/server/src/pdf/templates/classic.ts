@@ -36,7 +36,7 @@ export function renderClassic(doc: ExtractedDocument, s: TemplateSettings): stri
 
   const brandHtml = s.logo_data_url
     ? `<img src="${esc(s.logo_data_url)}" alt="" style="max-height:56px;max-width:200px;object-fit:contain;display:block" />`
-    : `<div class="brand">${esc(s.company_name ?? "BORU studio")}<small>${s.company_name ? "" : "Mail Automation"}</small></div>`;
+    : `<div class="brand">${esc(s.company_name ?? "BORU")}<small>${s.company_name ? "" : "mail"}</small></div>`;
 
   const rows = doc.line_items
     .map(
