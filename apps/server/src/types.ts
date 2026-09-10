@@ -184,6 +184,7 @@ export interface LineItem {
 
 /** Un articolo del listino prezzi dell'utente. */
 export interface PriceListItem {
+  id?: string; // stabile, assegnato al salvataggio: serve per modificare/cancellare la riga
   code: string | null;
   description: string;
   unit: string | null;
@@ -205,6 +206,7 @@ export interface PriceListMeta {
   source_ref: string; // spreadsheetId oppure nome file
   item_count: number;
   synced_at: string;
+  edited_count: number; // modifiche manuali dall'ultima sincronizzazione (avviso prima di risincronizzare)
 }
 
 /** Struttura dei dati estratti da Claude a partire dal testo della mail. */

@@ -189,6 +189,7 @@ export function migrate(): void {
   ensureColumn("documents", "draft_id", "draft_id TEXT");
   ensureColumn("processed", "scan_run_id", "scan_run_id INTEGER"); // null per righe pre-feature
   ensureColumn("price_lists", "api_config_enc", "api_config_enc TEXT"); // config connettore API, cifrata
+  ensureColumn("price_lists", "edited_count", "edited_count INTEGER NOT NULL DEFAULT 0"); // modifiche manuali dall'ultimo sync
   ensureColumn("processed", "category", "category TEXT");
   ensureColumn("processed", "detail", "detail TEXT");
   // template su misura generato dall'AI (HTML con placeholder, ~150KB max)

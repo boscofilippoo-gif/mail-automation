@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { FileSpreadsheet, FileText, Link2, Loader2, Plug, RefreshCw, Trash2 } from "lucide-react";
+import { Check, FileSpreadsheet, FileText, Link2, Loader2, Pencil, Plug, Plus, RefreshCw, Search, Settings2, Trash2, X } from "lucide-react";
 
-import { api, connectGmail, type ListinoResult, type ListinoState } from "@/api";
+import { api, connectGmail, type ApiConfigView, type ListinoResult, type ListinoState, type PriceListItem } from "@/api";
+import { cn } from "@/lib/utils";
+import { toast } from "@/components/Toast";
 
 const SOURCE_LABEL: Record<string, string> = {
   sheet: "Google Sheet",
@@ -149,7 +151,13 @@ export function Listino() {
             <div className="flex gap-2">
               {(state.source_type === "sheet" || state.source_type === "api") && (
                 <button
-                  onClick={() => run("sync", () => api.syncListino())}
+                  onClick={() => {
+                    if (
+                      state.edited_count > 0 &&
+                      !confirm(`Hai ${state.edited_count === 1 ? "1 modifica manuale" : `${state.edited_count} modifiche manuali`} dall'ultima sincronizzazione. Sincronizzando, la fonte (${SOURCE_LABEL[state.source_type]}) sovrascrive tutto e le modifiche vanno perse. Continuare?`)
+                    ) return;
+                    run("sync", () => api.syncListino());
+                  }}
                   disabled={busy !== null}
                   className="inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm transition-colors hover:border-accent disabled:opacity-50"
                 >
@@ -168,28 +176,13 @@ export function Listino() {
             </div>
           </div>
 
-          {/* anteprima articoli */}
-          <div className="mt-6 overflow-hidden rounded-xl border border-border">
-            <div className="hidden gap-2 border-b border-border px-4 py-2.5 font-mono text-xs uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[100px_1fr_80px_110px]">
-              <span>Codice</span><span>Descrizione</span><span>Unità</span><span className="text-right">Prezzo</span>
-            </div>
-            {state.preview.map((it, i) => (
-              <div key={i} className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 border-b border-border/50 px-4 py-2.5 text-sm last:border-0 sm:grid-cols-[100px_1fr_80px_110px] sm:gap-2">
-                {/* mobile: descrizione + prezzo in alto, codice e unità in piccolo sotto */}
-                <span className="truncate font-mono text-xs text-muted-foreground order-3 sm:order-none">{it.code ?? "—"}{it.unit ? <span className="sm:hidden"> · {it.unit}</span> : null}</span>
-                <span className="truncate order-1 sm:order-none">{it.description}</span>
-                <span className="hidden text-muted-foreground sm:block">{it.unit ?? "—"}</span>
-                <span className="text-right order-2 sm:order-none">
-                  {new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(it.unit_price)}
-                </span>
-              </div>
-            ))}
-            {state.item_count > state.preview.length && (
-              <p className="px-4 py-2.5 text-xs text-muted-foreground">
-                … e altri {state.item_count - state.preview.length} articoli.
-              </p>
-            )}
-          </div>
+          {state.source_type === "api" && <ApiConnectionEditor onChanged={reload} />}
+          {state.edited_count > 0 && (state.source_type === "sheet" || state.source_type === "api") && (
+            <p className="mt-4 text-xs text-muted-foreground">
+              {state.edited_count === 1 ? "1 modifica manuale" : `${state.edited_count} modifiche manuali`} dall'ultima sincronizzazione: alla prossima "Sincronizza" la fonte vince e vengono sovrascritte.
+            </p>
+          )}
+          <ItemsEditor key={state.synced_at + state.item_count} total={state.item_count} onChanged={reload} />
         </div>
       ) : (
         <div className="mt-8 grid grid-cols-1 gap-5 md:grid-cols-2">
@@ -293,6 +286,241 @@ export function Listino() {
               {busy === "connect-api" ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}
               {busy === "connect-api" ? "Collego e analizzo…" : "Collega API"}
             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ───────────────────────── Articoli: ricerca + modifica in riga ───────────────────────── */
+
+const PAGE = 50;
+const cellInput =
+  "w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-accent";
+const eur = (n: number) => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
+const numStr = (n: number) => String(n).replace(".", ",");
+const parseNum = (s: string) => {
+  const n = Number(s.replace(",", "."));
+  return Number.isFinite(n) ? n : NaN;
+};
+
+type Draft = { code: string; description: string; unit: string; unit_price: string };
+const emptyDraft: Draft = { code: "", description: "", unit: "", unit_price: "" };
+const toDraft = (it: PriceListItem): Draft => ({ code: it.code ?? "", description: it.description, unit: it.unit ?? "", unit_price: numStr(it.unit_price) });
+
+function ItemsEditor({ total, onChanged }: { total: number; onChanged: () => void }) {
+  const [q, setQ] = useState("");
+  const [qDraft, setQDraft] = useState("");
+  const [items, setItems] = useState<PriceListItem[]>([]);
+  const [found, setFound] = useState(total);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<string | null>(null); // id in modifica
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setQ(qDraft.trim()), 300);
+    return () => clearTimeout(t);
+  }, [qDraft]);
+
+  function load(reset: boolean) {
+    setLoading(true);
+    api.listListinoItems({ q: q || undefined, limit: PAGE, offset: reset ? 0 : items.length })
+      .then((p) => {
+        setItems((cur) => (reset ? p.items : [...cur, ...p.items]));
+        setFound(p.total);
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setLoading(false));
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => load(true), [q]);
+
+  function startEdit(it: PriceListItem) {
+    setAdding(false);
+    setEditing(it.id ?? null);
+    setDraft(toDraft(it));
+  }
+  function validate(d: Draft): { description: string; code: string | null; unit: string | null; unit_price: number } | null {
+    const price = parseNum(d.unit_price);
+    if (!d.description.trim()) { toast.error("La descrizione è obbligatoria"); return null; }
+    if (!Number.isFinite(price) || price < 0) { toast.error("Prezzo non valido"); return null; }
+    return { description: d.description.trim(), code: d.code.trim() || null, unit: d.unit.trim() || null, unit_price: price };
+  }
+  async function saveEdit(id: string) {
+    const v = validate(draft);
+    if (!v) return;
+    setBusy(true);
+    try {
+      const { item } = await api.updateListinoItem(id, v);
+      setItems((cur) => cur.map((x) => (x.id === id ? item : x)));
+      setEditing(null);
+      toast.success("Articolo aggiornato");
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function saveNew() {
+    const v = validate(draft);
+    if (!v) return;
+    setBusy(true);
+    try {
+      const { item } = await api.addListinoItem(v);
+      setItems((cur) => [item, ...cur]);
+      setFound((n) => n + 1);
+      setAdding(false);
+      setDraft(emptyDraft);
+      toast.success("Articolo aggiunto");
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove(it: PriceListItem) {
+    if (!it.id || !confirm(`Eliminare "${it.description}" dal listino?`)) return;
+    try {
+      await api.deleteListinoItem(it.id);
+      setItems((cur) => cur.filter((x) => x.id !== it.id));
+      setFound((n) => n - 1);
+      toast.success("Articolo eliminato");
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore");
+    }
+  }
+
+  const rowGrid = "grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 sm:grid-cols-[110px_1fr_90px_120px_72px] sm:items-center sm:gap-2";
+  const EditRow = ({ onSave, onCancel }: { onSave: () => void; onCancel: () => void }) => (
+    <div className={cn(rowGrid, "border-b border-border/50 bg-foreground/[0.03] px-4 py-2.5")}>
+      <input className={cellInput} placeholder="Codice" value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} />
+      <input className={cn(cellInput, "col-span-2 sm:col-span-1")} placeholder="Descrizione" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} autoFocus />
+      <input className={cellInput} placeholder="Unità" value={draft.unit} onChange={(e) => setDraft({ ...draft, unit: e.target.value })} />
+      <input className={cn(cellInput, "text-right")} inputMode="decimal" placeholder="Prezzo" value={draft.unit_price} onChange={(e) => setDraft({ ...draft, unit_price: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") onSave(); if (e.key === "Escape") onCancel(); }} />
+      <span className="flex justify-end gap-1">
+        <button onClick={onSave} disabled={busy} aria-label="Salva" className="rounded-lg p-1.5 disabled:opacity-50" style={{ background: "var(--azzurro)", color: "var(--nero)" }}>{busy ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}</button>
+        <button onClick={onCancel} aria-label="Annulla" className="rounded-lg border border-border p-1.5"><X className="size-4" /></button>
+      </span>
+    </div>
+  );
+
+  return (
+    <div className="mt-6">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="relative min-w-[220px] flex-1 sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input type="search" value={qDraft} onChange={(e) => setQDraft(e.target.value)} placeholder="Cerca codice o descrizione…" className="w-full rounded-full border border-border bg-card py-1.5 pl-9 pr-3.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-accent" />
+        </label>
+        <button onClick={() => { setEditing(null); setDraft(emptyDraft); setAdding(true); }} className="inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-sm transition-colors hover:border-accent">
+          <Plus className="size-4" /> Aggiungi articolo
+        </button>
+        <span className="ml-auto font-mono text-xs text-muted-foreground">
+          {q ? `${found} ${found === 1 ? "risultato" : "risultati"}` : `${found} articoli`}
+        </span>
+      </div>
+
+      <div className="mt-3 overflow-hidden rounded-xl border border-border">
+        <div className="hidden gap-2 border-b border-border px-4 py-2.5 font-mono text-xs uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[110px_1fr_90px_120px_72px]">
+          <span>Codice</span><span>Descrizione</span><span>Unità</span><span className="text-right">Prezzo</span><span />
+        </div>
+        {adding && <EditRow onSave={saveNew} onCancel={() => setAdding(false)} />}
+        {items.map((it) =>
+          editing === it.id ? (
+            <EditRow key={it.id} onSave={() => saveEdit(it.id!)} onCancel={() => setEditing(null)} />
+          ) : (
+            <div key={it.id} className={cn(rowGrid, "group border-b border-border/50 px-4 py-2.5 text-sm last:border-0")}>
+              <span className="order-3 truncate font-mono text-xs text-muted-foreground sm:order-none">{it.code ?? "—"}{it.unit ? <span className="sm:hidden"> · {it.unit}</span> : null}</span>
+              <span className="order-1 truncate sm:order-none">{it.description}</span>
+              <span className="hidden text-muted-foreground sm:block">{it.unit ?? "—"}</span>
+              <span className="order-2 text-right sm:order-none">{eur(it.unit_price)}</span>
+              <span className="order-4 flex justify-end gap-1 sm:order-none">
+                <button onClick={() => startEdit(it)} aria-label="Modifica" className="rounded-lg border border-border p-1.5 text-muted-foreground transition-colors hover:border-accent hover:text-foreground"><Pencil className="size-3.5" /></button>
+                <button onClick={() => remove(it)} aria-label="Elimina" className="rounded-lg border border-border p-1.5 text-muted-foreground transition-colors hover:border-[var(--rosa)] hover:text-[var(--rosa)]"><Trash2 className="size-3.5" /></button>
+              </span>
+            </div>
+          ),
+        )}
+        {!loading && items.length === 0 && (
+          <p className="px-4 py-3 text-sm text-muted-foreground">{q ? "Nessun articolo corrisponde." : "Listino vuoto: aggiungi il primo articolo."}</p>
+        )}
+      </div>
+      {items.length < found && (
+        <div className="mt-4 flex justify-center">
+          <button onClick={() => load(false)} disabled={loading} className="rounded-full border border-border px-5 py-2 text-sm transition-colors hover:border-accent disabled:opacity-50">
+            Carica altri ({found - items.length} rimanenti)
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ───────────────────────── Connessione API: modifica senza ricreare ───────────────────────── */
+
+function ApiConnectionEditor({ onChanged }: { onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [cfg, setCfg] = useState<ApiConfigView | null>(null);
+  const [form, setForm] = useState({ url: "", authType: "none", headerName: "", secret: "" });
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.getListinoApiConfig().then((c) => { setCfg(c); setForm({ url: c.url, authType: c.authType, headerName: c.headerName ?? "", secret: "" }); }).catch(() => {});
+  }, []);
+  async function save() {
+    setBusy(true);
+    try {
+      const r = await api.updateListinoApiConfig({ url: form.url, authType: form.authType, headerName: form.headerName, secret: form.secret || undefined });
+      setCfg(r);
+      setForm((f) => ({ ...f, secret: "" }));
+      setOpen(false);
+      toast.success(`Connessione aggiornata: ${r.tested} articoli letti in prova`);
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Connessione non riuscita");
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (!cfg) return null;
+  return (
+    <div className="mt-4 rounded-2xl border border-border p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm">
+          <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Connessione</span>
+          <span className="ml-3 truncate">{cfg.url}</span>
+          <span className="ml-2 rounded-full px-2 py-0.5 text-xs" style={{ background: "color-mix(in oklab, var(--foreground) 10%, transparent)" }}>
+            {cfg.authType === "none" ? "senza autenticazione" : cfg.authType === "apikey" ? `API key (${cfg.headerName ?? "header"})` : cfg.authType}
+          </span>
+        </p>
+        <button onClick={() => setOpen((v) => !v)} className="inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-sm transition-colors hover:border-accent">
+          <Settings2 className="size-4" /> {open ? "Chiudi" : "Modifica connessione"}
+        </button>
+      </div>
+      {open && (
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <input className={cn(cellInput, "sm:col-span-2")} placeholder="https://api.tuogestionale.it/prodotti" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
+          <select className={cellInput} value={form.authType} onChange={(e) => setForm({ ...form, authType: e.target.value })}>
+            <option value="none">Nessuna autenticazione</option>
+            <option value="apikey">API key (header)</option>
+            <option value="bearer">Bearer token</option>
+            <option value="basic">Basic (utente:password)</option>
+          </select>
+          {form.authType === "apikey" && (
+            <input className={cellInput} placeholder="Nome header (es. X-Api-Key)" value={form.headerName} onChange={(e) => setForm({ ...form, headerName: e.target.value })} />
+          )}
+          {form.authType !== "none" && (
+            <input className={cn(cellInput, form.authType === "apikey" ? "sm:col-span-2" : "")} type="password" autoComplete="off" placeholder={cfg.hasSecret ? "Segreto: lascia vuoto per mantenere quello attuale" : "Segreto / token"} value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} />
+          )}
+          <div className="flex gap-2 sm:col-span-2">
+            <button onClick={save} disabled={busy} className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium disabled:opacity-60" style={{ background: "var(--azzurro)", color: "var(--nero)" }}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Prova e salva
+            </button>
+            <p className="self-center text-xs text-muted-foreground">Prima di salvare facciamo una chiamata di prova: se non risponde con articoli, non cambia nulla.</p>
           </div>
         </div>
       )}

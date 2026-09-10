@@ -69,6 +69,7 @@ export interface ExtractedDocument {
 }
 
 export interface PriceListItem {
+  id?: string; // stabile: serve per modificare/cancellare
   code: string | null;
   description: string;
   unit: string | null;
@@ -83,8 +84,16 @@ export type ListinoState =
       source_ref: string;
       item_count: number;
       synced_at: string;
+      edited_count: number; // modifiche manuali dall'ultimo sync
       preview: PriceListItem[];
     };
+
+export interface ApiConfigView {
+  url: string;
+  authType: "none" | "apikey" | "bearer" | "basic";
+  headerName: string | null;
+  hasSecret: boolean;
+}
 
 /** Risposta delle route listino che possono chiedere la riautorizzazione Google. */
 export type ListinoResult = ListinoState | { error: string; needsReauth?: boolean };
@@ -387,6 +396,16 @@ export const api = {
       body: JSON.stringify({ filename, data, kind }),
     }),
   deleteListino: () => request<{ ok: true }>("/api/listino", { method: "DELETE" }),
+  listListinoItems: (f: { q?: string; limit?: number; offset?: number } = {}) =>
+    request<{ items: PriceListItem[]; total: number }>(`/api/listino/items${toQuery(f)}`),
+  addListinoItem: (item: Omit<PriceListItem, "id">) =>
+    request<{ item: PriceListItem }>("/api/listino/items", { method: "POST", body: JSON.stringify(item) }),
+  updateListinoItem: (id: string, patch: Partial<Omit<PriceListItem, "id">>) =>
+    request<{ item: PriceListItem }>(`/api/listino/items/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteListinoItem: (id: string) => request<{ ok: true }>(`/api/listino/items/${id}`, { method: "DELETE" }),
+  getListinoApiConfig: () => request<ApiConfigView>("/api/listino/api-config"),
+  updateListinoApiConfig: (patch: { url?: string; authType?: string; headerName?: string; secret?: string }) =>
+    request<ApiConfigView & { tested: number }>("/api/listino/api-config", { method: "PATCH", body: JSON.stringify(patch) }),
 
   getDocument: (id: number) =>
     request<{

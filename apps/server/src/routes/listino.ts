@@ -7,6 +7,8 @@ import {
   getPriceList,
   getPriceListApiConfig,
   hasScope,
+  savePriceListItems,
+  updatePriceListApiConfig,
   upsertPriceList,
 } from "../repo.js";
 import { applyMapping, parseCsv, MAX_ITEMS } from "../listino/parse.js";
@@ -182,6 +184,128 @@ listinoRouter.post("/upload", async (req, res) => {
     res.json(stateResponse(req.userId!));
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Errore nell'elaborazione del file" });
+  }
+});
+
+/* ───────────────── Articoli: ricerca, modifica, aggiunta, cancellazione ───────────────── */
+
+function cleanItem(b: Record<string, unknown>, cur?: PriceListItem): PriceListItem {
+  const str = (v: unknown, cap: number) => (typeof v === "string" ? v.trim().slice(0, cap) : "");
+  const description = "description" in b ? str(b.description, 300) : (cur?.description ?? "");
+  if (!description) throw new Error("La descrizione è obbligatoria.");
+  let unit_price = cur?.unit_price ?? NaN;
+  if ("unit_price" in b) {
+    const n = typeof b.unit_price === "string" ? Number(b.unit_price.replace(",", ".")) : Number(b.unit_price);
+    if (!Number.isFinite(n) || n < 0) throw new Error("Prezzo non valido.");
+    unit_price = Math.round(n * 10000) / 10000;
+  }
+  if (!Number.isFinite(unit_price)) throw new Error("Prezzo obbligatorio.");
+  return {
+    id: cur?.id,
+    code: "code" in b ? str(b.code, 60) || null : (cur?.code ?? null),
+    description,
+    unit: "unit" in b ? str(b.unit, 30) || null : (cur?.unit ?? null),
+    unit_price,
+  };
+}
+
+/** Ricerca paginata negli articoli (codice, descrizione, unità). */
+listinoRouter.get("/items", (req, res) => {
+  const pl = getPriceList(req.userId!);
+  if (!pl) {
+    res.json({ items: [], total: 0 });
+    return;
+  }
+  const q = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 500);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const filtered = q
+    ? pl.items.filter((it) => `${it.code ?? ""} ${it.description} ${it.unit ?? ""}`.toLowerCase().includes(q))
+    : pl.items;
+  res.json({ items: filtered.slice(offset, offset + limit), total: filtered.length });
+});
+
+/** Nuovo articolo (in testa: è quello che l'utente ha appena scritto). */
+listinoRouter.post("/items", (req, res) => {
+  const pl = getPriceList(req.userId!);
+  if (!pl) {
+    res.status(400).json({ error: "Nessun listino collegato." });
+    return;
+  }
+  try {
+    if (pl.items.length >= MAX_ITEMS) throw new Error(`Listino pieno (max ${MAX_ITEMS} articoli).`);
+    const item = cleanItem(req.body as Record<string, unknown>);
+    const meta = savePriceListItems(req.userId!, [item, ...pl.items]);
+    const saved = getPriceList(req.userId!)!.items[0];
+    res.json({ item: saved, meta });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Articolo non valido" });
+  }
+});
+
+/** Correzione di un articolo. */
+listinoRouter.patch("/items/:id", (req, res) => {
+  const pl = getPriceList(req.userId!);
+  const idx = pl?.items.findIndex((it) => it.id === req.params.id) ?? -1;
+  if (!pl || idx < 0) {
+    res.status(404).json({ error: "Articolo non trovato." });
+    return;
+  }
+  try {
+    const next = [...pl.items];
+    next[idx] = cleanItem(req.body as Record<string, unknown>, pl.items[idx]);
+    const meta = savePriceListItems(req.userId!, next);
+    res.json({ item: next[idx], meta });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Articolo non valido" });
+  }
+});
+
+listinoRouter.delete("/items/:id", (req, res) => {
+  const pl = getPriceList(req.userId!);
+  if (!pl || !pl.items.some((it) => it.id === req.params.id)) {
+    res.status(404).json({ error: "Articolo non trovato." });
+    return;
+  }
+  const meta = savePriceListItems(req.userId!, pl.items.filter((it) => it.id !== req.params.id));
+  res.json({ ok: true, meta });
+});
+
+/* ───────────────── Connessione API: lettura (senza segreto) e modifica ───────────────── */
+
+listinoRouter.get("/api-config", (req, res) => {
+  const cfg = getPriceListApiConfig(req.userId!);
+  if (!cfg) {
+    res.status(404).json({ error: "Nessuna connessione API." });
+    return;
+  }
+  // il segreto non esce mai dal server: si dice solo se c'è
+  res.json({ url: cfg.url, authType: cfg.authType, headerName: cfg.headerName ?? null, hasSecret: Boolean(cfg.secret) });
+});
+
+/** Modifica URL/autenticazione: prova la chiamata, poi salva. Segreto vuoto = mantieni quello attuale. */
+listinoRouter.patch("/api-config", async (req, res) => {
+  const cur = getPriceListApiConfig(req.userId!);
+  if (!cur) {
+    res.status(404).json({ error: "Nessuna connessione API da modificare." });
+    return;
+  }
+  const b = req.body as { url?: string; authType?: string; headerName?: string; secret?: string };
+  const AUTH_TYPES = ["none", "apikey", "bearer", "basic"];
+  const authType = (b.authType && AUTH_TYPES.includes(b.authType) ? b.authType : cur.authType) as ApiConnectorConfig["authType"];
+  const config: ApiConnectorConfig = {
+    url: (b.url?.trim() || cur.url).slice(0, 2000),
+    authType,
+    headerName: b.headerName !== undefined ? b.headerName.trim().slice(0, 80) || undefined : cur.headerName,
+    secret: authType === "none" ? undefined : (b.secret?.trim().slice(0, 500) || cur.secret),
+  };
+  try {
+    const items = await fetchApiItems(config);
+    if (items.length === 0) throw new Error("La chiamata funziona ma non restituisce articoli con prezzo.");
+    updatePriceListApiConfig(req.userId!, config);
+    res.json({ ok: true, tested: items.length, url: config.url, authType: config.authType, headerName: config.headerName ?? null, hasSecret: Boolean(config.secret) });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Connessione non riuscita" });
   }
 });
 

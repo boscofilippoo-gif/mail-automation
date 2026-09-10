@@ -747,22 +747,65 @@ export function deleteBreweryTemplate(userId: number, breweryKey: string): void 
 
 /* ───────────────────────── Listino prezzi ───────────────────────── */
 
+/** Id corto e stabile per una riga di listino. */
+function newItemId(): string {
+  return nodeCrypto.randomBytes(5).toString("hex");
+}
+/** Garantisce un id a ogni articolo (le fonti importate non ne hanno). */
+export function withIds(items: PriceListItem[]): PriceListItem[] {
+  const seen = new Set<string>();
+  return items.map((it) => {
+    let id = it.id && !seen.has(it.id) ? it.id : newItemId();
+    while (seen.has(id)) id = newItemId();
+    seen.add(id);
+    return { ...it, id };
+  });
+}
+
 export function getPriceList(
   userId: number,
 ): { meta: PriceListMeta; items: PriceListItem[] } | null {
   const row = db.prepare(`SELECT * FROM price_lists WHERE user_id = ?`).get(userId) as
-    | { source_type: PriceListSource; source_ref: string; items_json: string; item_count: number; synced_at: string }
+    | { source_type: PriceListSource; source_ref: string; items_json: string; item_count: number; synced_at: string; edited_count: number }
     | undefined;
   if (!row) return null;
+  let items = JSON.parse(row.items_json) as PriceListItem[];
+  // listini salvati prima della feature: assegna gli id una volta e persisti
+  if (items.some((it) => !it.id)) {
+    items = withIds(items);
+    db.prepare(`UPDATE price_lists SET items_json = ? WHERE user_id = ?`).run(JSON.stringify(items), userId);
+  }
   return {
     meta: {
       source_type: row.source_type,
       source_ref: row.source_ref,
       item_count: row.item_count,
       synced_at: row.synced_at,
+      edited_count: row.edited_count ?? 0,
     },
-    items: JSON.parse(row.items_json) as PriceListItem[],
+    items,
   };
+}
+
+/**
+ * Sostituisce gli articoli dopo una modifica manuale (aggiunta, correzione,
+ * cancellazione): fonte e config restano, il contatore delle modifiche cresce.
+ */
+export function savePriceListItems(userId: number, items: PriceListItem[]): PriceListMeta | null {
+  const withId = withIds(items);
+  db.prepare(
+    `UPDATE price_lists SET items_json = ?, item_count = ?, edited_count = edited_count + 1 WHERE user_id = ?`,
+  ).run(JSON.stringify(withId), withId.length, userId);
+  return getPriceList(userId)?.meta ?? null;
+}
+
+/** Aggiorna solo la configurazione del connettore API (URL/auth), senza toccare gli articoli. */
+export function updatePriceListApiConfig(userId: number, config: ApiConnectorConfig): void {
+  db.prepare(`UPDATE price_lists SET api_config_enc = ?, source_ref = ? WHERE user_id = ? AND source_type = 'api'`).run(
+    encrypt(JSON.stringify(config)),
+    config.url.slice(0, 300),
+    userId,
+  );
 }
 
 export function upsertPriceList(
@@ -782,11 +825,13 @@ export function upsertPriceList(
     user_id: userId,
     source_type: sourceType,
     source_ref: sourceRef,
-    items_json: JSON.stringify(items),
+    items_json: JSON.stringify(withIds(items)),
     item_count: items.length,
     // cifrata a riposo con lo stesso AES-GCM dei token OAuth; null per le altre fonti
     api_config_enc: apiConfig ? encrypt(JSON.stringify(apiConfig)) : null,
   });
+  // una (ri)sincronizzazione azzera le modifiche manuali: la fonte vince
+  db.prepare(`UPDATE price_lists SET edited_count = 0 WHERE user_id = ?`).run(userId);
   return getPriceList(userId)!.meta;
 }
 
