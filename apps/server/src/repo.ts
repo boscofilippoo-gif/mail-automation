@@ -642,6 +642,18 @@ export function backfillCustomers(): number {
   return linked;
 }
 
+/** Nomi delle schede cliente per un insieme di id (per export: il nome corretto a mano vince). */
+export function getCustomCustomerName(userId: number, ids: number[]): Map<number, string> {
+  const out = new Map<number, string>();
+  const uniq = [...new Set(ids)];
+  if (uniq.length === 0) return out;
+  const rows = db
+    .prepare(`SELECT id, name FROM customers WHERE user_id = ? AND id IN (${uniq.map(() => "?").join(",")})`)
+    .all(userId, ...uniq) as { id: number; name: string }[];
+  for (const r of rows) out.set(r.id, r.name);
+  return out;
+}
+
 /* ───────────────────────── Moduli Excel birrifici ───────────────────────── */
 
 interface BreweryRowRaw {

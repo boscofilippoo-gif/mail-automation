@@ -1,6 +1,6 @@
 import fs from "node:fs";
 
-import { Router } from "express";
+import { Router, type Request } from "express";
 
 import { requireAuth } from "../auth/session.js";
 import {
@@ -36,6 +36,7 @@ import { createReplyDraft, fetchReplyMeta } from "../gmail/draft.js";
 import { NeedsReauthError } from "../listino/sheet.js";
 import { generateReplyBody } from "../ai/reply.js";
 import { DRAFTS_SCOPE } from "../env.js";
+import { sendCsv, sendZip } from "./exportDocs.js";
 import {
   DOC_TYPES,
   SENT_STATUSES,
@@ -144,6 +145,36 @@ function validateDocument(body: unknown): ExtractedDocument {
   };
 }
 
+/** Filtri della lista dalla query string (condivisi da lista ed export). */
+function listFilters(q: Request["query"]) {
+  return {
+    q: qs(q.q)?.slice(0, 100),
+    type: qEnum(q.type, DOC_TYPES),
+    status: qEnum(q.status, SENT_STATUSES),
+    from: qDate(q.from),
+    to: qDate(q.to),
+    sort: qEnum<DocumentSort>(q.sort, DOC_SORTS),
+    review: q.review === "pending" ? ("pending" as const) : undefined,
+    customerId: q.customer !== undefined ? qInt(q.customer, -1, 1_000_000_000) : undefined,
+  };
+}
+
+/** Export CSV dei documenti filtrati (stessi parametri della lista). */
+documentsRouter.get("/export.csv", (req, res) => {
+  sendCsv(res, req.userId!, listFilters(req.query));
+});
+
+/** Export ZIP dei PDF filtrati (+ indice.csv dentro). */
+documentsRouter.get("/export.zip", async (req, res) => {
+  try {
+    await sendZip(res, req.userId!, listFilters(req.query));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Errore export";
+    console.error("[documents] export.zip fallito:", message);
+    if (!res.headersSent) res.status(500).json({ error: message });
+  }
+});
+
 /**
  * Lista documenti filtrata e paginata.
  * Query: q, type, status, from, to (YYYY-MM-DD), sort (recent|oldest|customer|total),
@@ -152,18 +183,7 @@ function validateDocument(body: unknown): ExtractedDocument {
 documentsRouter.get("/", (req, res) => {
   const limit = qInt(req.query.limit, 20, 100) || 20;
   const offset = qInt(req.query.offset, 0, 1_000_000);
-  const { items, total } = queryDocuments(req.userId!, {
-    q: qs(req.query.q)?.slice(0, 100),
-    type: qEnum(req.query.type, DOC_TYPES),
-    status: qEnum(req.query.status, SENT_STATUSES),
-    from: qDate(req.query.from),
-    to: qDate(req.query.to),
-    sort: qEnum<DocumentSort>(req.query.sort, DOC_SORTS),
-    review: req.query.review === "pending" ? "pending" : undefined,
-    customerId: req.query.customer !== undefined ? qInt(req.query.customer, -1, 1_000_000_000) : undefined,
-    limit,
-    offset,
-  });
+  const { items, total } = queryDocuments(req.userId!, { ...listFilters(req.query), limit, offset });
   // il numero di moduli decide il flusso Excel: 0 nessuno, 1 download diretto, ≥2 smistamento.
   // I moduli fornitore riguardano solo gli ORDINI: su fatture/preventivi non si mostra nulla.
   const breweryCount = countBreweryTemplates(req.userId!);

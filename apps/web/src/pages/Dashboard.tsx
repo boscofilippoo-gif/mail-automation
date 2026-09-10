@@ -7,6 +7,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  FileDown,
   HelpCircle,
   MoreHorizontal,
   Eye,
@@ -679,9 +680,55 @@ function DocFilters({
         <HelpCircle className="size-4" style={{ color: "#e2b53f" }} />
         Da controllare
       </button>
+      <ExportMenu filters={filters} total={total} />
       <span className="ml-auto font-mono text-xs text-muted-foreground">
         {total === 0 ? "0 documenti" : shown < total ? `${shown} di ${total}` : `${total} ${total === 1 ? "documento" : "documenti"}`}
       </span>
+    </div>
+  );
+}
+
+/** "Esporta": CSV o ZIP dei PDF, con i filtri correnti. Download diretto dal browser. */
+function ExportMenu({ filters, total }: { filters: GridFilters; total: number }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const f = toApiFilters(filters);
+  const scope = isFiltered(filters) ? "documenti filtrati" : "tutti i documenti";
+  const item = "flex w-full flex-col items-start gap-0.5 px-3.5 py-2 text-left text-sm transition-colors hover:bg-foreground/[0.06]";
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        disabled={total === 0}
+        aria-expanded={open}
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-colors disabled:opacity-50",
+          open ? "border-accent text-foreground" : "border-border text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <FileDown className="size-4" />
+        Esporta
+      </button>
+      {open && (
+        <div role="menu" className="absolute left-0 z-10 mt-1 w-72 overflow-hidden rounded-xl border border-border py-1 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.8)]" style={{ background: "var(--background)" }}>
+          <a href={api.exportUrl("csv", f)} className={item} onClick={() => setOpen(false)}>
+            <span className="font-medium">CSV per Excel</span>
+            <span className="text-xs text-muted-foreground">Una riga per documento: {scope} ({total}). Data, tipo, numero, cliente, importi, stato.</span>
+          </a>
+          <a href={api.exportUrl("zip", f)} className={item} onClick={() => setOpen(false)}>
+            <span className="font-medium">ZIP dei PDF</span>
+            <span className="text-xs text-muted-foreground">Tutti i PDF di {scope}{total > 500 ? ", primi 500" : ""}, rinominati per data, tipo e cliente, più un indice CSV.</span>
+          </a>
+        </div>
+      )}
     </div>
   );
 }

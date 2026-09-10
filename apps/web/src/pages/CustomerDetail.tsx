@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Check, Eye, GitMerge, HelpCircle, Loader2, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Eye, FileDown, GitMerge, HelpCircle, Loader2, Pencil, Trash2 } from "lucide-react";
 
 import { api, type Customer, type CustomerDetail as Detail, type CustomerDocument, type DocType } from "@/api";
 import { cn } from "@/lib/utils";
@@ -89,6 +89,16 @@ export function CustomerDetail() {
               <button onClick={() => setEditing(true)} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm transition-colors hover:border-accent">
                 <Pencil className="size-4" /> Modifica
               </button>
+              {c.doc_count > 0 && (
+                <>
+                  <a href={api.exportUrl("zip", { customer: c.id })} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm transition-colors hover:border-accent" title="Tutti i PDF di questo cliente in uno ZIP">
+                    <FileDown className="size-4" /> ZIP PDF
+                  </a>
+                  <a href={api.exportUrl("csv", { customer: c.id })} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm transition-colors hover:border-accent" title="Elenco documenti in CSV per Excel">
+                    <FileDown className="size-4" /> CSV
+                  </a>
+                </>
+              )}
               <MergeButton customer={c} onMerged={(into) => navigate(`/customers/${into}`)} />
               {c.doc_count === 0 && <DeleteButton id={c.id} onDeleted={() => navigate("/customers")} />}
             </>

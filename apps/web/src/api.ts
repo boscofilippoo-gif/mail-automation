@@ -305,6 +305,8 @@ export const api = {
 
   getActivity: () => request<{ lastCheckAt: string | null }>("/api/me/activity"),
 
+  /** URL di download dell'export (CSV o ZIP dei PDF) coi filtri della lista. */
+  exportUrl: (kind: "csv" | "zip", f: DocumentFilters = {}) => `/api/documents/export.${kind}${toQuery(f)}`,
   listCustomers: (f: { q?: string; sort?: CustomerSort; limit?: number; offset?: number } = {}) =>
     request<Page<Customer>>(`/api/customers${toQuery(f)}`),
   getCustomer: (id: number) => request<CustomerDetail>(`/api/customers/${id}`),
